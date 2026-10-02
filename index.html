@@ -998,3 +998,1430 @@ function renderLeaderboard(containerId, highlightScore) {
   el.innerHTML = '<div style="font-weight:700;margin-bottom:6px">🏆 Local top 10</div>' +
     board.map((e, i) => {
       const hi = highlightScore != null && e.score === highlightScore;
+      return `<div style="display:flex;justify-content:space-between;padding:3px 0;${hi ? 'color:#feca57;font-weight:700' : ''}">
+        <span>${i + 1}. ${e.name} · ${e.city}</span>
+        <span>${e.score.toLocaleString()}</span>
+      </div>`;
+    }).join('');
+}
+
+function defaultProgress() {
+  return {
+    money: 45,
+    energy: 100,
+    food: 100,
+    reputation: 40,
+    day: 1,
+    hour: 8, // 0-23 for day/night
+    currentCity: 'london',
+    unlocked: ['london'],
+    housing: 'hostel',
+    relationships: { colleague: 20, neighbour: 15, friend: 10, partner: 0 },
+    successfulShifts: 0,
+    totalPassengers: 0,
+    totalDistance: 0,
+    radioUnlocked: false,
+    _eventPayBonus: 1,
+    _eventDiff: 1,
+    _eventTour: false
+  };
+}
+
+let progress = defaultProgress();
+let activeSlot = 0;
+
+function slotKey(i) { return 'euroLifeSlot_' + i; }
+
+function loadProgress(slot) {
+  if (slot != null) activeSlot = slot;
+  try {
+    const raw = localStorage.getItem(slotKey(activeSlot));
+    if (raw) {
+      progress = { ...defaultProgress(), ...JSON.parse(raw) };
+    } else {
+      progress = defaultProgress();
+    }
+  } catch(e) { progress = defaultProgress(); }
+}
+
+function saveProgress() {
+  const toSave = { ...progress };
+  delete toSave._eventPayBonus;
+  delete toSave._eventDiff;
+  delete toSave._eventTour;
+  delete toSave._eventFuelTax;
+  localStorage.setItem(slotKey(activeSlot), JSON.stringify(toSave));
+}
+
+function getDailyCost() {
+  const base = { london: 14, paris: 16, berlin: 12, rome: 11, amsterdam: 15 }[progress.currentCity] || 12;
+  const h = HOUSING[progress.housing] || HOUSING.hostel;
+  return Math.round(base * h.daily);
+}
+
+function isNight() {
+  return progress.hour >= 20 || progress.hour < 6;
+}
+
+// ==================== GAME STATE ====================
+let canvas, ctx;
+let selectedCity = null;
+let selectedJob = null;
+let gameState = 'menu';
+let animationId = null;
+
+const state = {
+  score: 0,
+  distance: 0,
+  passengers: 0,
+  fares: 0,           // money earned this run
+  closeCalls: 0,
+  speed: 0,
+  maxSpeed: 95,
+  targetSpeed: 0,
+  fuel: 100,
+  lane: 1,
+  visualLane: 1,
+  busY: 0,
+  obstacles: [],
+  fuelPickups: [],
+  stops: [],
+  particles: [],
+  radioIndex: 0,
+  frame: 0,
+  lastObstacle: 0,
+  lastFuel: 0,
+  lastStop: 0,
+  hopTimer: 0,
+  hornTimer: 0,
+  invincible: 0,
+  stopCooldown: 0,
+  jobPayMult: 1,
+  jobDifficulty: 1,
+  keys: {},
+  touchStartX: 0,
+  touchStartY: 0
+};
+
+const LANES = 3;
+const LANE_WIDTH = 90;
+const ROAD_MARGIN = 40;
+
+// ==================== INIT ====================
+function init() {
+  canvas = document.getElementById('gameCanvas');
+  ctx = canvas.getContext('2d');
+  resize();
+  window.addEventListener('resize', resize);
+  
+  loadProgress();
+  selectedCity = CITIES[progress.currentCity];
+  
+  buildHub();
+  
+  // Controls
+  document.addEventListener('keydown', onKeyDown);
+  document.addEventListener('keyup', onKeyUp);
+  canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+  canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+  canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+  
+  document.getElementById('start-btn').addEventListener('click', startGame);
+  document.getElementById('retry-btn').addEventListener('click', () => { showMenu(); });
+  document.getElementById('menu-btn').addEventListener('click', showMenu);
+  document.getElementById('resume-btn').addEventListener('click', resumeGame);
+  document.getElementById('quit-btn').addEventListener('click', showMenu);
+  document.getElementById('pause-btn').addEventListener('click', pauseGame);
+  const shareBtn = document.getElementById('share-btn');
+  if (shareBtn) shareBtn.addEventListener('click', shareScore);
+  
+  // Tabs
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  });
+  
+  setupMobileControls();
+  
+  document.body.addEventListener('touchmove', e => {
+    if (gameState === 'playing') e.preventDefault();
+  }, { passive: false });
+  
+  if (isTouchDevice()) {
+    document.getElementById('controls-hint').textContent = 'Use on-screen buttons or swipe';
+  }
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  ['jobs','travel','life','home','social','saves'].forEach(t => {
+    const el = document.getElementById('tab-' + t);
+    if (el) el.classList.toggle('hidden', t !== tab);
+  });
+  if (tab === 'travel') buildCitySelect();
+  if (tab === 'life') buildLifeActions();
+  if (tab === 'home') buildHomeList();
+  if (tab === 'social') buildSocialList();
+  if (tab === 'saves') buildSavesList();
+}
+
+function buildHub() {
+  updateHubHeader();
+  buildJobList();
+  buildCitySelect();
+  buildLifeActions();
+  buildHomeList();
+  buildSocialList();
+  buildSavesList();
+}
+
+function updateHubHeader() {
+  selectedCity = CITIES[progress.currentCity];
+  const cur = selectedCity.currency || '€';
+  const timeStr = (progress.hour % 12 || 12) + (progress.hour >= 12 ? 'pm' : 'am');
+  document.getElementById('hub-money').textContent = cur + Math.floor(progress.money);
+  document.getElementById('hub-day').textContent = `Day ${progress.day} · ${timeStr} · ${selectedCity.name}`;
+  document.getElementById('hub-energy').textContent = Math.round(progress.energy);
+  document.getElementById('hub-food').textContent = Math.round(progress.food);
+  document.getElementById('hub-rep').textContent = Math.round(progress.reputation);
+  document.getElementById('hub-rent').textContent = cur + getDailyCost();
+  
+  const screen = document.getElementById('start-screen');
+  screen.className = 'screen bg-' + progress.currentCity;
+}
+
+function buildJobList() {
+  const list = document.getElementById('job-list');
+  list.innerHTML = '';
+  Object.values(JOBS).forEach(job => {
+    const card = document.createElement('div');
+    card.className = 'job-card' + (selectedJob && selectedJob.id === job.id ? ' selected' : '');
+    card.innerHTML = `
+      <div class="job-title">${job.title}</div>
+      <div class="job-meta">Pay ×${job.payMult} · Energy −${job.energyCost} · ${job.desc}</div>
+    `;
+    card.addEventListener('click', () => {
+      if (progress.energy < job.energyCost) {
+        alert('Not enough energy. Rest first.');
+        return;
+      }
+      selectedJob = job;
+      document.querySelectorAll('.job-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      const btn = document.getElementById('start-btn');
+      btn.disabled = false;
+      btn.textContent = `Start ${job.title}`;
+    });
+    list.appendChild(card);
+  });
+}
+
+function buildLifeActions() {
+  const list = document.getElementById('life-actions');
+  list.innerHTML = '';
+  const actions = [
+    { id: 'rest', title: 'Rest / Sleep', meta: '+35 Energy · −15 Food · advances day · pay daily cost', fn: doRest },
+    { id: 'eat', title: 'Eat a proper meal', meta: '−€8 · +45 Food · +10 Energy', fn: () => doEat(8, 45, 10) },
+    { id: 'snack', title: 'Street food / snack', meta: '−€3 · +18 Food', fn: () => doEat(3, 18, 0) },
+    { id: 'coffee', title: 'Coffee + pastry', meta: '−€5 · +12 Food · +12 Energy', fn: () => doEat(5, 12, 12) },
+    { id: 'training', title: 'Driving course', meta: '−€25 · +5 Reputation', fn: () => { if (doSpend(25)) { progress.reputation = Math.min(100, progress.reputation + 5); saveProgress(); updateHubHeader(); } } }
+  ];
+  actions.forEach(a => {
+    const card = document.createElement('div');
+    card.className = 'job-card';
+    card.innerHTML = `<div class="job-title">${a.title}</div><div class="job-meta">${a.meta}</div>`;
+    card.addEventListener('click', a.fn);
+    list.appendChild(card);
+  });
+}
+
+function doRest() {
+  const cost = getDailyCost();
+  if (progress.money < cost) {
+    alert('Can\'t afford rent today. Go earn more!');
+    return;
+  }
+  const h = HOUSING[progress.housing] || HOUSING.hostel;
+  progress.money -= cost;
+  progress.energy = Math.min(100, progress.energy + 30 + (h.energyBonus || 0));
+  progress.food = Math.max(0, progress.food - 12);
+  progress.day++;
+  progress.hour = 7 + Math.floor(Math.random() * 3);
+  progress.reputation = Math.max(0, Math.min(100, progress.reputation + (Math.random() > 0.5 ? 1 : -1)));
+  Object.keys(progress.relationships || {}).forEach(k => {
+    if (Math.random() > 0.7) progress.relationships[k] = Math.max(0, progress.relationships[k] - 2);
+  });
+  saveProgress();
+  updateHubHeader();
+  buildJobList();
+  if (Math.random() < 0.4) setTimeout(showRandomEvent, 300);
+}
+
+function doEat(money, foodGain, energyGain) {
+  if (progress.money < money) {
+    alert('Not enough money.');
+    return false;
+  }
+  progress.money -= money;
+  progress.food = Math.min(100, progress.food + foodGain);
+  progress.energy = Math.min(100, progress.energy + energyGain);
+  saveProgress();
+  updateHubHeader();
+  return true;
+}
+
+function doSpend(money) {
+  if (progress.money < money) {
+    alert('Not enough money.');
+    return false;
+  }
+  progress.money -= money;
+  saveProgress();
+  updateHubHeader();
+  return true;
+}
+
+function buildHomeList() {
+  const list = document.getElementById('home-list');
+  if (!list) return;
+  list.innerHTML = '';
+  Object.values(HOUSING).forEach(h => {
+    const owned = progress.housing === h.id;
+    const card = document.createElement('div');
+    card.className = 'job-card' + (owned ? ' selected' : '');
+    const cur = (selectedCity && selectedCity.currency) || '€';
+    card.innerHTML = `<div class="job-title">${owned ? '✓ ' : ''}${h.name}</div>
+      <div class="job-meta">${h.desc} · Daily ×${h.daily} · Rest +${h.energyBonus}${owned ? '' : ' · ' + cur + h.cost}</div>`;
+    if (!owned && h.cost > 0) {
+      card.addEventListener('click', () => {
+        if (progress.money < h.cost) { alert('Not enough money.'); return; }
+        progress.money -= h.cost;
+        progress.housing = h.id;
+        saveProgress();
+        updateHubHeader();
+        buildHomeList();
+      });
+    }
+    list.appendChild(card);
+  });
+}
+
+function buildSocialList() {
+  const list = document.getElementById('social-list');
+  if (!list) return;
+  list.innerHTML = '';
+  const unlocked = (progress.successfulShifts || 0) >= 5;
+  progress.radioUnlocked = unlocked;
+  const msg = document.getElementById('social-lock-msg');
+  if (msg) msg.textContent = unlocked
+    ? 'Radio chat unlocked! Hang out or broadcast to other drivers.'
+    : `Radio chat unlocks after 5 successful shifts (${progress.successfulShifts || 0}/5).`;
+  
+  RELATIONSHIPS.forEach(r => {
+    const level = (progress.relationships && progress.relationships[r.id]) || 0;
+    const card = document.createElement('div');
+    card.className = 'job-card';
+    card.innerHTML = `<div class="job-title">${r.emoji} ${r.name}</div>
+      <div class="job-meta">Bond ${Math.round(level)}/100 · Hang out (−€6, +bond)</div>`;
+    card.addEventListener('click', () => {
+      if (progress.money < 6) { alert('Not enough money.'); return; }
+      if (progress.energy < 8) { alert('Too tired.'); return; }
+      progress.money -= 6;
+      progress.energy = Math.max(0, progress.energy - 8);
+      progress.food = Math.max(0, progress.food - 3);
+      if (!progress.relationships) progress.relationships = {};
+      progress.relationships[r.id] = Math.min(100, level + 12 + Math.random() * 8);
+      saveProgress();
+      updateHubHeader();
+      buildSocialList();
+    });
+    list.appendChild(card);
+  });
+  
+  if (unlocked) {
+    const radio = document.createElement('div');
+    radio.className = 'job-card';
+    radio.innerHTML = `<div class="job-title">📻 Driver radio chat</div><div class="job-meta">Share tips · +rep · −€2</div>`;
+    radio.addEventListener('click', () => {
+      if (progress.money < 2) { alert('Not enough money.'); return; }
+      progress.money -= 2;
+      progress.reputation = Math.min(100, progress.reputation + 3);
+      progress.relationships.colleague = Math.min(100, (progress.relationships.colleague || 0) + 5);
+      saveProgress();
+      updateHubHeader();
+      buildSocialList();
+      alert('Route tips shared on the depot channel. Reputation up.');
+    });
+    list.appendChild(radio);
+  }
+}
+
+function buildSavesList() {
+  const list = document.getElementById('saves-list');
+  if (!list) return;
+  list.innerHTML = '';
+  for (let i = 0; i < 3; i++) {
+    let info = 'Empty slot';
+    try {
+      const raw = localStorage.getItem(slotKey(i));
+      if (raw) {
+        const d = JSON.parse(raw);
+        info = `Day ${d.day} · ${CITIES[d.currentCity]?.name || d.currentCity} · €${Math.floor(d.money || 0)}`;
+      }
+    } catch(e) {}
+    const card = document.createElement('div');
+    card.className = 'job-card' + (activeSlot === i ? ' selected' : '');
+    card.innerHTML = `<div class="job-title">Slot ${i + 1}${activeSlot === i ? ' (active)' : ''}</div><div class="job-meta">${info}</div>`;
+    card.addEventListener('click', () => {
+      saveProgress();
+      loadProgress(i);
+      selectedCity = CITIES[progress.currentCity];
+      buildHub();
+      alert('Loaded slot ' + (i + 1));
+    });
+    list.appendChild(card);
+  }
+  const fresh = document.createElement('div');
+  fresh.className = 'job-card';
+  fresh.innerHTML = `<div class="job-title">New life in this slot</div><div class="job-meta">Reset active slot to day 1</div>`;
+  fresh.addEventListener('click', () => {
+    if (!confirm('Reset this save slot?')) return;
+    progress = defaultProgress();
+    saveProgress();
+    selectedCity = CITIES.london;
+    buildHub();
+  });
+  list.appendChild(fresh);
+}
+
+function showRandomEvent() {
+  const ev = RANDOM_EVENTS[Math.floor(Math.random() * RANDOM_EVENTS.length)];
+  document.getElementById('event-title').textContent = ev.title;
+  document.getElementById('event-desc').textContent = ev.desc;
+  const box = document.getElementById('event-choices');
+  box.innerHTML = '';
+  ev.choices.forEach(c => {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-secondary';
+    btn.style.width = '100%';
+    btn.textContent = c.label;
+    btn.addEventListener('click', () => {
+      c.fn(progress);
+      saveProgress();
+      updateHubHeader();
+      document.getElementById('event-modal').classList.add('hidden');
+    });
+    box.appendChild(btn);
+  });
+  document.getElementById('event-modal').classList.remove('hidden');
+}
+
+function isTouchDevice() {
+  return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+}
+
+function setupMobileControls() {
+  const btnLeft = document.getElementById('btn-left');
+  const btnRight = document.getElementById('btn-right');
+  const btnGas = document.getElementById('btn-gas');
+  const btnBrake = document.getElementById('btn-brake');
+  const btnHop = document.getElementById('btn-hop');
+  const btnHorn = document.getElementById('btn-horn');
+  const btnRadio = document.getElementById('btn-radio');
+  
+  // Helper for press & hold
+  function bindHold(btn, onStart, onEnd) {
+    const start = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      btn.classList.add('active');
+      onStart();
+    };
+    const end = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      btn.classList.remove('active');
+      if (onEnd) onEnd();
+    };
+    btn.addEventListener('touchstart', start, { passive: false });
+    btn.addEventListener('touchend', end, { passive: false });
+    btn.addEventListener('touchcancel', end, { passive: false });
+    // Also support mouse for testing
+    btn.addEventListener('mousedown', start);
+    btn.addEventListener('mouseup', end);
+    btn.addEventListener('mouseleave', end);
+  }
+  
+  // Lane buttons (tap)
+  btnLeft.addEventListener('touchstart', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    btnLeft.classList.add('active');
+    changeLane(-1);
+  }, { passive: false });
+  btnLeft.addEventListener('touchend', (e) => {
+    e.preventDefault(); btnLeft.classList.remove('active');
+  }, { passive: false });
+  btnLeft.addEventListener('mousedown', () => { changeLane(-1); btnLeft.classList.add('active'); });
+  btnLeft.addEventListener('mouseup', () => btnLeft.classList.remove('active'));
+  
+  btnRight.addEventListener('touchstart', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    btnRight.classList.add('active');
+    changeLane(1);
+  }, { passive: false });
+  btnRight.addEventListener('touchend', (e) => {
+    e.preventDefault(); btnRight.classList.remove('active');
+  }, { passive: false });
+  btnRight.addEventListener('mousedown', () => { changeLane(1); btnRight.classList.add('active'); });
+  btnRight.addEventListener('mouseup', () => btnRight.classList.remove('active'));
+  
+  // Gas (hold)
+  bindHold(btnGas, 
+    () => { state.keys['ArrowUp'] = true; },
+    () => { state.keys['ArrowUp'] = false; }
+  );
+  
+  // Brake (hold)
+  bindHold(btnBrake, 
+    () => { state.keys['ArrowDown'] = true; },
+    () => { state.keys['ArrowDown'] = false; }
+  );
+  
+  // Hop (tap)
+  btnHop.addEventListener('touchstart', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    btnHop.classList.add('active');
+    hop();
+  }, { passive: false });
+  btnHop.addEventListener('touchend', (e) => {
+    e.preventDefault(); btnHop.classList.remove('active');
+  }, { passive: false });
+  btnHop.addEventListener('mousedown', () => { hop(); btnHop.classList.add('active'); });
+  btnHop.addEventListener('mouseup', () => btnHop.classList.remove('active'));
+  
+  // Horn (tap)
+  btnHorn.addEventListener('touchstart', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    btnHorn.classList.add('active');
+    horn();
+  }, { passive: false });
+  btnHorn.addEventListener('touchend', (e) => {
+    e.preventDefault(); btnHorn.classList.remove('active');
+  }, { passive: false });
+  btnHorn.addEventListener('mousedown', () => { horn(); btnHorn.classList.add('active'); });
+  btnHorn.addEventListener('mouseup', () => btnHorn.classList.remove('active'));
+  
+  // Radio (tap)
+  btnRadio.addEventListener('touchstart', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    btnRadio.classList.add('active');
+    cycleRadio();
+  }, { passive: false });
+  btnRadio.addEventListener('touchend', (e) => {
+    e.preventDefault(); btnRadio.classList.remove('active');
+  }, { passive: false });
+  btnRadio.addEventListener('mousedown', () => { cycleRadio(); btnRadio.classList.add('active'); });
+  btnRadio.addEventListener('mouseup', () => btnRadio.classList.remove('active'));
+}
+
+function resize() {
+  const container = document.getElementById('game-container');
+  const rect = container.getBoundingClientRect();
+  canvas.width = rect.width * devicePixelRatio;
+  canvas.height = rect.height * devicePixelRatio;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
+}
+
+function buildCitySelect() {
+  const grid = document.getElementById('city-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  Object.values(CITIES).forEach(city => {
+    const unlock = CITY_UNLOCK[city.id];
+    const isUnlocked = progress.unlocked.includes(city.id);
+    const isCurrent = progress.currentCity === city.id;
+    const card = document.createElement('div');
+    card.className = 'city-card' + (isCurrent ? ' selected' : '') + (!isUnlocked ? ' locked' : '');
+    card.dataset.city = city.id;
+    
+    let extra = '';
+    if (isCurrent) {
+      extra = `<div class="city-status">📍 You are here</div>`;
+    } else if (isUnlocked) {
+      extra = `<div class="lock-cost">Travel · ${city.currency || '€'}${unlock.cost} · −${unlock.energy} energy</div>`;
+    } else {
+      extra = `<div class="lock-cost">🔒 ${city.currency || '€'}${unlock.cost} · Rep ${unlock.minRep}+</div>`;
+    }
+    
+    card.innerHTML = `
+      <div class="city-emoji">${city.emoji}</div>
+      <div class="city-name">${city.name}</div>
+      <div class="city-vehicle">${city.vehicleEmoji} ${city.vehicle}</div>
+      ${extra}
+    `;
+    
+    if (isUnlocked && !isCurrent) {
+      card.addEventListener('click', () => travelTo(city.id));
+    } else if (!isUnlocked) {
+      card.addEventListener('click', () => tryUnlock(city.id));
+    }
+    grid.appendChild(card);
+  });
+}
+
+function tryUnlock(id) {
+  const unlock = CITY_UNLOCK[id];
+  if (progress.reputation < unlock.minRep) {
+    alert(`Need reputation ${unlock.minRep}+. Work more shifts to build reputation.`);
+    return;
+  }
+  if (progress.money < unlock.cost) {
+    alert(`Need ${CITIES[id].currency || '€'}${unlock.cost} to unlock.`);
+    return;
+  }
+  if (progress.energy < unlock.energy) {
+    alert('Not enough energy to travel.');
+    return;
+  }
+  progress.money -= unlock.cost;
+  progress.energy -= unlock.energy;
+  progress.unlocked.push(id);
+  progress.currentCity = id;
+  selectedCity = CITIES[id];
+  saveProgress();
+  updateHubHeader();
+  buildCitySelect();
+  alert(`Welcome to ${CITIES[id].name}!`);
+}
+
+function travelTo(id) {
+  const unlock = CITY_UNLOCK[id];
+  if (progress.money < unlock.cost * 0.4) {
+    alert('Not enough money for the trip.');
+    return;
+  }
+  if (progress.energy < unlock.energy * 0.6) {
+    alert('Too tired to travel. Rest first.');
+    return;
+  }
+  const fare = Math.round(unlock.cost * 0.4);
+  const eng = Math.round(unlock.energy * 0.6);
+  progress.money -= fare;
+  progress.energy -= eng;
+  progress.currentCity = id;
+  selectedCity = CITIES[id];
+  saveProgress();
+  updateHubHeader();
+  buildCitySelect();
+  buildJobList();
+}
+
+// ==================== GAME FLOW ====================
+function showMenu() {
+  gameState = 'menu';
+  cancelAnimationFrame(animationId);
+  selectedCity = CITIES[progress.currentCity];
+  selectedJob = null;
+  document.getElementById('start-btn').disabled = true;
+  document.getElementById('start-btn').textContent = 'Choose a job';
+  document.getElementById('start-screen').classList.remove('hidden');
+  document.getElementById('gameover-screen').classList.add('hidden');
+  document.getElementById('pause-screen').classList.add('hidden');
+  document.getElementById('hud').classList.add('hidden');
+  document.getElementById('status-meters').classList.add('hidden');
+  document.getElementById('speedometer').classList.add('hidden');
+  document.getElementById('radio').classList.add('hidden');
+  document.getElementById('controls-hint').classList.add('hidden');
+  document.getElementById('pause-btn').classList.add('hidden');
+  document.getElementById('mobile-controls').classList.remove('visible');
+  document.body.classList.remove('mobile-playing');
+  switchTab('jobs');
+  buildHub();
+}
+
+function startGame() {
+  if (!selectedCity || !selectedJob) return;
+  if (progress.energy < selectedJob.energyCost) {
+    alert('Not enough energy.');
+    return;
+  }
+  
+  // Spend energy + some food for the shift
+  progress.energy -= selectedJob.energyCost;
+  progress.food = Math.max(0, progress.food - 5);
+  saveProgress();
+  
+  Object.assign(state, {
+    score: 0,
+    distance: 0,
+    passengers: 0,
+    fares: 0,
+    closeCalls: 0,
+    speed: 30,
+    targetSpeed: 30,
+    maxSpeed: 95,
+    fuel: 100,
+    lane: 1,
+    visualLane: 1,
+    busY: 0,
+    obstacles: [],
+    fuelPickups: [],
+    stops: [],
+    particles: [],
+    radioIndex: 0,
+    frame: 0,
+    lastObstacle: 0,
+    lastFuel: 0,
+    lastStop: 0,
+    hopTimer: 0,
+    hornTimer: 0,
+    invincible: 40,
+    stopCooldown: 0,
+    jobPayMult: selectedJob.payMult * (progress._eventPayBonus || 1),
+    jobDifficulty: selectedJob.difficulty * (progress._eventDiff || 1) * (selectedJob.id === 'night' || isNight() ? 1.15 : 1),
+    keys: {}
+  });
+  
+  // Advance clock for night shifts
+  if (selectedJob.id === 'night') progress.hour = 21;
+  else if (progress.hour == null) progress.hour = 9;
+  
+  gameState = 'playing';
+  document.getElementById('start-screen').classList.add('hidden');
+  document.getElementById('gameover-screen').classList.add('hidden');
+  document.getElementById('pause-screen').classList.add('hidden');
+  document.getElementById('hud').classList.remove('hidden');
+  document.getElementById('status-meters').classList.remove('hidden');
+  document.getElementById('speedometer').classList.remove('hidden');
+  document.getElementById('radio').classList.remove('hidden');
+  document.getElementById('controls-hint').classList.remove('hidden');
+  document.getElementById('pause-btn').classList.remove('hidden');
+  
+  if (isTouchDevice()) {
+    document.getElementById('mobile-controls').classList.add('visible');
+    document.body.classList.add('mobile-playing');
+  }
+  
+  updateRadio();
+  document.getElementById('city-label').textContent = selectedCity.name + ' · ' + selectedJob.title;
+  document.getElementById('capacity').textContent = selectedCity.capacity;
+  
+  loop();
+}
+
+function pauseGame() {
+  if (gameState !== 'playing') return;
+  gameState = 'paused';
+  document.getElementById('pause-screen').classList.remove('hidden');
+  document.getElementById('mobile-controls').classList.remove('visible');
+  document.getElementById('status-meters').classList.add('hidden');
+  document.body.classList.remove('mobile-playing');
+}
+
+function resumeGame() {
+  if (gameState !== 'paused') return;
+  gameState = 'playing';
+  document.getElementById('pause-screen').classList.add('hidden');
+  document.getElementById('status-meters').classList.remove('hidden');
+  if (isTouchDevice()) {
+    document.getElementById('mobile-controls').classList.add('visible');
+    document.body.classList.add('mobile-playing');
+  }
+  loop();
+}
+
+function endGame() {
+  gameState = 'gameover';
+  cancelAnimationFrame(animationId);
+  
+  document.getElementById('hud').classList.add('hidden');
+  document.getElementById('status-meters').classList.add('hidden');
+  document.getElementById('speedometer').classList.add('hidden');
+  document.getElementById('radio').classList.add('hidden');
+  document.getElementById('controls-hint').classList.add('hidden');
+  document.getElementById('pause-btn').classList.add('hidden');
+  document.getElementById('mobile-controls').classList.remove('visible');
+  document.body.classList.remove('mobile-playing');
+  
+  // Apply job earnings
+  const payBonus = progress._eventPayBonus || 1;
+  const earned = state.fares * (state.jobPayMult || 1) * payBonus;
+  const tipBonus = state.closeCalls * 0.5;
+  const totalEarned = earned + tipBonus;
+  progress.money += totalEarned;
+  progress.totalPassengers += state.passengers;
+  progress.totalDistance += state.distance;
+  
+  // Count as successful if you earned something meaningful
+  if (state.passengers >= 3 || state.distance > 800) {
+    progress.successfulShifts = (progress.successfulShifts || 0) + 1;
+  }
+  
+  const repGain = Math.min(8, (state.passengers * 0.15) + (state.closeCalls * 0.1) - 2);
+  progress.reputation = Math.max(0, Math.min(100, progress.reputation + repGain));
+  progress.energy = Math.max(0, progress.energy - 5);
+  progress.hour = Math.min(23, (progress.hour || 8) + 2 + Math.floor(Math.random() * 2));
+  
+  // Clear temp event flags
+  progress._eventPayBonus = 1;
+  progress._eventDiff = 1;
+  progress._eventTour = false;
+  progress._eventFuelTax = 1;
+  
+  saveProgress();
+  
+  const finalScore = Math.floor(state.score);
+  document.getElementById('gameover-city').textContent = selectedCity.name + ' · ' + selectedCity.phrases.crash;
+  document.getElementById('final-score').textContent = finalScore.toLocaleString();
+  document.getElementById('final-distance').textContent = (state.distance / 1000).toFixed(2) + ' km';
+  document.getElementById('final-passengers').textContent = state.passengers;
+  document.getElementById('final-fares').textContent = (selectedCity.currency || '€') + totalEarned.toFixed(1);
+  document.getElementById('final-closecalls').textContent = state.closeCalls;
+  
+  // Local leaderboard entry
+  const driverName = 'Driver' + (activeSlot + 1);
+  addToLeaderboard({
+    name: driverName,
+    city: selectedCity.name,
+    score: finalScore,
+    passengers: state.passengers,
+    day: progress.day,
+    job: selectedJob ? selectedJob.title : 'Shift',
+    ts: Date.now()
+  });
+  renderLeaderboard('local-board', finalScore);
+  
+  const key = 'euroBusHigh_' + selectedCity.id;
+  const prev = parseInt(localStorage.getItem(key) || '0');
+  if (finalScore > prev) {
+    localStorage.setItem(key, finalScore);
+    document.getElementById('highscore').textContent = `🏆 New high · Wallet: ${(selectedCity.currency||'€')}${Math.floor(progress.money)}`;
+  } else {
+    document.getElementById('highscore').textContent = `Wallet: ${(selectedCity.currency||'€')}${Math.floor(progress.money)} · Rep ${Math.round(progress.reputation)}`;
+  }
+  
+  // Share payload
+  window._lastShareText = `I scored ${finalScore.toLocaleString()} driving in ${selectedCity.name} on Euro Life!\n👥 ${state.passengers} passengers · ${(state.distance/1000).toFixed(1)} km · ${(selectedCity.currency||'€')}${totalEarned.toFixed(0)} earned\nCan you beat me?`;
+  
+  document.getElementById('gameover-screen').classList.remove('hidden');
+}
+
+async function shareScore() {
+  const text = window._lastShareText || 'I played Euro Life — beat my score!';
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: 'Euro Life score', text });
+      return;
+    } catch(e) {}
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    alert('Score copied! Paste it to friends on WhatsApp, X, or Discord.');
+  } catch(e) {
+    prompt('Copy this score:', text);
+  }
+}
+
+// ==================== INPUT ====================
+function onKeyDown(e) {
+  state.keys[e.key] = true;
+  if (gameState === 'playing') {
+    if (e.key === 'ArrowLeft' || e.key === 'a') changeLane(-1);
+    if (e.key === 'ArrowRight' || e.key === 'd') changeLane(1);
+    if (e.key === ' ' || e.key === 'ArrowUp') hop();
+    if (e.key === 'h' || e.key === 'H') horn();
+    if (e.key === 'r' || e.key === 'R') cycleRadio();
+    if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') pauseGame();
+  }
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+}
+
+function onKeyUp(e) {
+  state.keys[e.key] = false;
+}
+
+function onTouchStart(e) {
+  e.preventDefault();
+  const t = e.touches[0];
+  state.touchStartX = t.clientX;
+  state.touchStartY = t.clientY;
+}
+
+function onTouchMove(e) {
+  e.preventDefault();
+}
+
+function onTouchEnd(e) {
+  e.preventDefault();
+  if (gameState !== 'playing') return;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - state.touchStartX;
+  const dy = t.clientY - state.touchStartY;
+  
+  if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+    changeLane(dx > 0 ? 1 : -1);
+  } else if (dy < -50) {
+    hop();
+  }
+}
+
+function changeLane(dir) {
+  const newLane = state.lane + dir;
+  if (newLane >= 0 && newLane < LANES) {
+    state.lane = newLane;
+  }
+}
+
+function hop() {
+  if (state.hopTimer <= 0) {
+    state.hopTimer = 25;
+  }
+}
+
+function horn() {
+  if (state.hornTimer <= 0) {
+    state.hornTimer = 40;
+    // Clear nearby non-dangerous or push obstacles
+    state.obstacles.forEach(o => {
+      if (o.y > getBusScreenY() - 120 && o.y < getBusScreenY() + 80) {
+        o.x += (Math.random() > 0.5 ? 1 : -1) * 60;
+      }
+    });
+  }
+}
+
+function cycleRadio() {
+  state.radioIndex = (state.radioIndex + 1) % selectedCity.radio.length;
+  updateRadio();
+}
+
+function updateRadio() {
+  const station = selectedCity.radio[state.radioIndex];
+  document.getElementById('radio-name').textContent = station.name;
+  document.getElementById('radio-track').textContent = station.tracks[Math.floor(Math.random() * station.tracks.length)];
+}
+
+// ==================== GAME LOOP ====================
+function loop() {
+  if (gameState !== 'playing') return;
+  
+  update();
+  draw();
+  animationId = requestAnimationFrame(loop);
+}
+
+function update() {
+  state.frame++;
+  
+  // --- Realistic speed / inertia ---
+  const accelerating = state.keys['ArrowUp'] || state.keys['w'] || state.keys['W'];
+  const braking = state.keys['ArrowDown'] || state.keys['s'] || state.keys['S'];
+  
+  // Passenger load affects acceleration & top speed
+  const loadFactor = 1 - (state.passengers / selectedCity.capacity) * 0.25;
+  const effectiveMax = state.maxSpeed * loadFactor;
+  
+  if (state.stopCooldown > 0) {
+    // Brief dwell time at stop – can't accelerate hard
+    state.targetSpeed = Math.min(state.targetSpeed, 25);
+    state.stopCooldown--;
+  }
+  
+  if (state.fuel <= 0) {
+    state.targetSpeed = Math.max(0, state.targetSpeed - 2.2);
+  } else if (accelerating) {
+    // Gradual acceleration (buses are heavy)
+    state.targetSpeed = Math.min(effectiveMax, state.targetSpeed + 0.55 * loadFactor);
+    // Fuel use scales with speed + throttle (+ event fuel tax)
+    const tax = progress._eventFuelTax || 1;
+    const burn = (0.04 + (state.speed / 100) * 0.06) * tax;
+    state.fuel = Math.max(0, state.fuel - burn);
+  } else if (braking) {
+    // Strong but not instant brakes
+    state.targetSpeed = Math.max(0, state.targetSpeed - 2.4);
+    state.fuel = Math.max(0, state.fuel - 0.015);
+  } else {
+    // Engine braking / coasting
+    state.targetSpeed = Math.max(18, state.targetSpeed - 0.35);
+    state.fuel = Math.max(0, state.fuel - 0.018);
+  }
+  
+  // Smooth actual speed toward target (inertia)
+  state.speed += (state.targetSpeed - state.speed) * 0.12;
+  if (state.speed < 0.5) state.speed = 0;
+  
+  // Smooth lane visual (no teleport)
+  state.visualLane += (state.lane - state.visualLane) * 0.18;
+  
+  // Fuel + Food meter UI
+  // Food drains slowly during a shift
+  if (state.frame % 45 === 0) {
+    progress.food = Math.max(0, progress.food - 0.35);
+  }
+  // Low food hurts energy slightly
+  if (progress.food <= 15 && state.frame % 90 === 0) {
+    progress.energy = Math.max(0, progress.energy - 0.5);
+  }
+  
+  const fuelPct = Math.round(state.fuel);
+  document.getElementById('fuel-percent').textContent = fuelPct;
+  document.getElementById('fuel-bar').style.width = fuelPct + '%';
+  const fuelMeter = document.getElementById('fuel-meter');
+  if (fuelPct <= 20) fuelMeter.classList.add('low');
+  else fuelMeter.classList.remove('low');
+  
+  const foodPct = Math.round(progress.food);
+  document.getElementById('food-percent').textContent = foodPct;
+  document.getElementById('food-bar').style.width = foodPct + '%';
+  const foodMeter = document.getElementById('food-meter');
+  if (foodPct <= 20) foodMeter.classList.add('low');
+  else foodMeter.classList.remove('low');
+  
+  // Timers
+  if (state.hopTimer > 0) state.hopTimer--;
+  if (state.hornTimer > 0) state.hornTimer--;
+  if (state.invincible > 0) state.invincible--;
+  
+  // Distance & score (slower, more realistic scoring)
+  const distDelta = state.speed * 0.012;
+  state.distance += distDelta;
+  state.score += distDelta * 0.6 + state.passengers * 0.04;
+  
+  // Traffic density increases with distance + job difficulty
+  const density = Math.max(14, (55 / (state.jobDifficulty || 1)) - state.distance / 70 - state.speed / 8);
+  
+  // Spawn obstacles (clusters for realism)
+  if (state.frame - state.lastObstacle > density) {
+    spawnObstacle();
+    // Chance of a small cluster (traffic)
+    if (Math.random() < 0.28) {
+      setTimeout(() => { if (gameState === 'playing') spawnObstacle(); }, 80);
+    }
+    state.lastObstacle = state.frame;
+  }
+  
+  // Spawn fuel pickups (rarer – more valuable)
+  if (state.frame - state.lastFuel > 180 + Math.random() * 120) {
+    spawnFuel();
+    state.lastFuel = state.frame;
+  }
+  
+  // Spawn bus stops (tourist jobs / events get more)
+  let stopInterval = 260;
+  if (selectedJob && selectedJob.id === 'tour') stopInterval = 180;
+  if (selectedJob && selectedJob.id === 'express') stopInterval = 340;
+  if (progress._eventTour) stopInterval = Math.min(stopInterval, 170);
+  if (state.frame - state.lastStop > stopInterval + Math.random() * 120) {
+    spawnStop();
+    state.lastStop = state.frame;
+  }
+  
+  const h = canvas.height / devicePixelRatio;
+  const scroll = state.speed * 0.075;
+  
+  // Update obstacles with relative speeds (some slower, some faster)
+  state.obstacles.forEach(o => {
+    const rel = o.relSpeed || 1;
+    o.y += scroll * rel;
+    // Occasional lane drift for cyclists / scooters
+    if (o.drifts && Math.random() < 0.008) {
+      o.lane = Math.max(0, Math.min(LANES - 1, o.lane + (Math.random() > 0.5 ? 1 : -1)));
+    }
+  });
+  state.obstacles = state.obstacles.filter(o => o.y < h + 80);
+  
+  // Fuel pickups
+  state.fuelPickups.forEach(f => { f.y += scroll; });
+  state.fuelPickups = state.fuelPickups.filter(f => f.y < h + 60 && !f.collected);
+  
+  // Stops
+  state.stops.forEach(s => { s.y += scroll; });
+  state.stops = state.stops.filter(s => s.y < h + 100);
+  
+  checkCollisions();
+  checkFuelPickups();
+  checkStops();
+  
+  // HUD
+  document.getElementById('score').textContent = Math.floor(state.score).toLocaleString();
+  document.getElementById('distance').textContent = (state.distance / 1000).toFixed(1);
+  document.getElementById('passengers').textContent = state.passengers;
+  const runMoneyEl = document.getElementById('run-money');
+  if (runMoneyEl) runMoneyEl.textContent = (state.fares * (state.jobPayMult || 1)).toFixed(1);
+  document.getElementById('speedometer').textContent = Math.floor(state.speed) + ' km/h';
+}
+
+function spawnObstacle() {
+  const city = selectedCity;
+  const type = city.obstacles[Math.floor(Math.random() * city.obstacles.length)];
+  const lane = Math.floor(Math.random() * LANES);
+  
+  // Relative speed: cars similar, bikes slower, some faster
+  let relSpeed = 0.85 + Math.random() * 0.35;
+  if (type.type === 'cyclist' || type.type === 'bike' || type.type === 'ebike') {
+    relSpeed = 0.55 + Math.random() * 0.25;
+  } else if (type.type === 'vespa' || type.type === 'scooter') {
+    relSpeed = 0.7 + Math.random() * 0.4;
+  } else if (type.type === 'blackcab' || type.type === 'car') {
+    relSpeed = 0.9 + Math.random() * 0.25;
+  }
+  
+  const drifts = ['cyclist', 'bike', 'ebike', 'scooter', 'vespa'].includes(type.type);
+  
+  state.obstacles.push({
+    ...type,
+    lane,
+    x: 0,
+    y: -60,
+    passed: false,
+    relSpeed,
+    drifts
+  });
+}
+
+function spawnFuel() {
+  const lane = Math.floor(Math.random() * LANES);
+  // Slightly more fuel when player is running low
+  const amount = state.fuel < 30 ? 28 + Math.random() * 12 : 18 + Math.random() * 12;
+  state.fuelPickups.push({
+    lane,
+    y: -50,
+    amount: Math.round(amount),
+    collected: false
+  });
+}
+
+function spawnStop() {
+  const lane = Math.floor(Math.random() * LANES);
+  state.stops.push({
+    lane,
+    y: -80,
+    used: false,
+    capacity: 3 + Math.floor(Math.random() * 5)
+  });
+}
+
+function checkFuelPickups() {
+  const busY = getBusScreenY();
+  const busLane = Math.round(state.visualLane);
+  
+  for (const f of state.fuelPickups) {
+    if (f.collected) continue;
+    if (f.lane === busLane && Math.abs(f.y - busY) < 42) {
+      f.collected = true;
+      state.fuel = Math.min(100, state.fuel + f.amount);
+      state.score += 25;
+    }
+  }
+}
+
+function getBusScreenY() {
+  return (canvas.height / devicePixelRatio) * 0.72;
+}
+
+function getLaneX(lane) {
+  const w = canvas.width / devicePixelRatio;
+  const roadW = LANES * LANE_WIDTH;
+  const startX = (w - roadW) / 2;
+  return startX + lane * LANE_WIDTH + LANE_WIDTH / 2;
+}
+
+function checkCollisions() {
+  if (state.invincible > 0 || state.hopTimer > 12) return;
+  
+  const busY = getBusScreenY();
+  // Use rounded visual lane so collision matches what you see
+  const busLane = Math.round(state.visualLane);
+  
+  for (const o of state.obstacles) {
+    if (o.lane === busLane && o.danger) {
+      const dy = Math.abs(o.y - busY);
+      // Tighter, more fair hitbox
+      if (dy < 38) {
+        if (dy > 26 && !o.passed) {
+          state.closeCalls++;
+          state.score += 40;
+          o.passed = true;
+        } else if (dy <= 26) {
+          endGame();
+          return;
+        }
+      }
+    }
+  }
+}
+
+function checkStops() {
+  const busY = getBusScreenY();
+  const busLane = Math.round(state.visualLane);
+  for (const s of state.stops) {
+    if (!s.used && s.lane === busLane && Math.abs(s.y - busY) < 48) {
+      // Must slow down properly to pick up (realistic boarding)
+      if (state.speed <= 28 && state.passengers < selectedCity.capacity) {
+        const num = Math.min(s.capacity, selectedCity.capacity - state.passengers);
+        state.passengers += num;
+        state.fares += num * selectedCity.baseFare;
+        state.score += num * 35;
+        // Partial refuel at stops (depot-style top-up)
+        state.fuel = Math.min(100, state.fuel + 8 + num * 2);
+        s.used = true;
+        state.stopCooldown = 35; // dwell time – doors open
+        state.targetSpeed = Math.min(state.targetSpeed, 12);
+        
+        // Some passengers alight at the next opportunities
+        if (state.passengers > 6 && Math.random() > 0.55) {
+          const drop = 1 + Math.floor(Math.random() * 3);
+          state.passengers = Math.max(0, state.passengers - drop);
+        }
+      }
+    }
+  }
+}
+
+// ==================== DRAW ====================
+function draw() {
+  const w = canvas.width / devicePixelRatio;
+  const h = canvas.height / devicePixelRatio;
+  
+  // Sky gradient – day / night
+  const night = isNight() || (selectedJob && selectedJob.id === 'night');
+  const grad = ctx.createLinearGradient(0, 0, 0, h * 0.45);
+  if (night) {
+    grad.addColorStop(0, '#0a0a1a');
+    grad.addColorStop(1, '#1a1a3e');
+  } else {
+    grad.addColorStop(0, selectedCity.skyColor[0]);
+    grad.addColorStop(1, selectedCity.skyColor[1]);
+  }
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h * 0.45);
+  
+  // Stars at night
+  if (night) {
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    for (let i = 0; i < 18; i++) {
+      const sx = (i * 97 + state.frame * 0.02) % w;
+      const sy = (i * 53) % (h * 0.35);
+      ctx.beginPath();
+      ctx.arc(sx, sy, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  
+  // Animated landmark silhouette
+  drawLandmark(w, h, night);
+  
+  // Road
+  const roadW = LANES * LANE_WIDTH;
+  const roadX = (w - roadW) / 2;
+  
+  ctx.fillStyle = selectedCity.roadColor;
+  ctx.fillRect(roadX - 20, 0, roadW + 40, h);
+  
+  // Edge lines (solid)
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(roadX, 0); ctx.lineTo(roadX, h);
+  ctx.moveTo(roadX + roadW, 0); ctx.lineTo(roadX + roadW, h);
+  ctx.stroke();
+  
+  // Scrolling dashed lane lines
+  const dashOffset = (state.frame * state.speed * 0.08) % 40;
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 3;
+  ctx.setLineDash([16, 24]);
+  ctx.lineDashOffset = -dashOffset;
+  for (let i = 1; i < LANES; i++) {
+    const x = roadX + i * LANE_WIDTH;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.lineDashOffset = 0;
+  
+  // Sidewalks
+  ctx.fillStyle = '#7f8c8d';
+  ctx.fillRect(0, 0, roadX - 20, h);
+  ctx.fillRect(roadX + roadW + 20, 0, w, h);
+  
+  // Bus stops
+  state.stops.forEach(s => {
+    const x = getLaneX(s.lane);
+    ctx.fillStyle = s.used ? 'rgba(46, 204, 113, 0.3)' : 'rgba(241, 196, 15, 0.45)';
+    ctx.fillRect(x - LANE_WIDTH/2 + 4, s.y - 28, LANE_WIDTH - 8, 56);
+    ctx.fillStyle = s.used ? '#2ecc71' : '#f1c40f';
+    ctx.font = 'bold 13px Inter';
+    ctx.textAlign = 'center';
+    ctx.fillText(s.used ? '✓' : 'STOP', x, s.y);
+    if (!s.used) {
+      ctx.font = '10px Inter';
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.fillText('≤ 28 km/h', x, s.y + 16);
+    }
+  });
+  
+  // Obstacles
+  state.obstacles.forEach(o => {
+    const x = getLaneX(o.lane);
+    ctx.font = `${o.h}px serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(o.emoji, x, o.y);
+  });
+  
+  // Fuel pickups
+  state.fuelPickups.forEach(f => {
+    if (f.collected) return;
+    const x = getLaneX(f.lane);
+    // Soft glow
+    ctx.fillStyle = 'rgba(46, 204, 113, 0.25)';
+    ctx.beginPath();
+    ctx.arc(x, f.y, 22, 0, Math.PI * 2);
+    ctx.fill();
+    // Icon
+    ctx.font = '28px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('⛽', x, f.y);
+  });
+  
+  // Player bus
+  drawBus(w, h);
+  
+  // Horn effect
+  if (state.hornTimer > 30) {
+    const hx = getLaneX(Math.round(state.visualLane));
+    ctx.fillStyle = 'rgba(255, 255, 100, 0.15)';
+    ctx.beginPath();
+    ctx.arc(hx, getBusScreenY() - 30, 80, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Hop indicator
+  if (state.hopTimer > 0) {
+    const hx = getLaneX(Math.round(state.visualLane));
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.beginPath();
+    ctx.arc(hx, getBusScreenY(), 40, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawLandmark(w, h, night) {
+  const bob = Math.sin(state.frame * 0.02) * 2;
+  const alpha = night ? 0.35 : 0.18;
+  ctx.fillStyle = night ? `rgba(20,20,40,${alpha})` : `rgba(0,0,0,${alpha})`;
+  
+  // Parallax building row
+  for (let i = 0; i < 8; i++) {
+    const bx = ((i * 55 + state.frame * 0.15) % (w + 60)) - 30;
+    const bh = 40 + (i % 4) * 18;
+    ctx.fillRect(bx, h * 0.38 - bh + bob, 40, bh);
+    if (night && i % 2 === 0) {
+      ctx.fillStyle = 'rgba(255,220,100,0.25)';
+      ctx.fillRect(bx + 8, h * 0.38 - bh + 10 + bob, 6, 6);
+      ctx.fillRect(bx + 22, h * 0.38 - bh + 18 + bob, 6, 6);
+      ctx.fillStyle = `rgba(20,20,40,${alpha})`;
+    }
+  }
+  
+  ctx.fillStyle = night ? 'rgba(15,15,30,0.5)' : 'rgba(0,0,0,0.22)';
+  if (selectedCity.id === 'london') {
+    ctx.fillRect(w * 0.72, h * 0.12 + bob, 16, 95);
+    ctx.fillRect(w * 0.70, h * 0.09 + bob, 22, 16);
+    ctx.fillRect(w * 0.74, h * 0.05 + bob, 8, 18);
+  } else if (selectedCity.id === 'paris') {
+    ctx.beginPath();
+    ctx.moveTo(w * 0.74, h * 0.36 + bob);
+    ctx.lineTo(w * 0.8, h * 0.06 + bob);
+    ctx.lineTo(w * 0.86, h * 0.36 + bob);
+    ctx.fill();
+  } else if (selectedCity.id === 'berlin') {
+    for (let i = 0; i < 5; i++) ctx.fillRect(w * 0.64 + i * 14, h * 0.16 + bob, 7, 75);
+  } else if (selectedCity.id === 'rome') {
+    ctx.beginPath();
+    ctx.arc(w * 0.8, h * 0.28 + bob, 38, Math.PI, 0);
+    ctx.fill();
+  } else if (selectedCity.id === 'amsterdam') {
+    for (let i = 0; i < 4; i++) {
+      ctx.fillRect(w * 0.6 + i * 26, h * 0.18 + bob, 20, 65);
+      ctx.fillRect(w * 0.62 + i * 26, h * 0.12 + bob, 16, 14);
+    }
+  }
+}
+
+function drawBus(w, h) {
+  // Smooth visual lane position
+  const roadW = LANES * LANE_WIDTH;
+  const startX = (w - roadW) / 2;
+  const x = startX + state.visualLane * LANE_WIDTH + LANE_WIDTH / 2;
+  const y = getBusScreenY() - (state.hopTimer > 0 ? 14 : 0);
+  
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath();
+  ctx.ellipse(x, y + 38, 32, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Bus body
+  ctx.fillStyle = selectedCity.accent;
+  roundRect(ctx, x - 28, y - 40, 56, 70, 8);
+  ctx.fill();
+  
+  // Windows
+  ctx.fillStyle = '#87CEEB';
+  roundRect(ctx, x - 22, y - 32, 44, 22, 4);
+  ctx.fill();
+  
+  // Lower detail
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.fillRect(x - 28, y + 10, 56, 8);
+  
+  // Wheels
+  ctx.fillStyle = '#222';
+  ctx.beginPath();
+  ctx.arc(x - 16, y + 32, 9, 0, Math.PI * 2);
+  ctx.arc(x + 16, y + 32, 9, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Vehicle emoji overlay
+  ctx.font = '28px serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(selectedCity.vehicleEmoji, x, y - 5);
+  
+  // Passenger count bubble
+  if (state.passengers > 0) {
+    ctx.fillStyle = '#2ecc71';
+    ctx.beginPath();
+    ctx.arc(x + 26, y - 30, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 11px Inter';
+    ctx.fillText(state.passengers, x + 26, y - 29);
+  }
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// ==================== START ====================
+init();
+</script>
+</body>
+</html>
