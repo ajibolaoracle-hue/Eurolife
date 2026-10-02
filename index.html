@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>EURO LIFE – Drive. Earn. Survive Europe</title>
+<meta name="description" content="Free browser life sim: drive buses across Europe, pay rent, unlock cities, build relationships. No download.">
+<meta property="og:title" content="EURO LIFE – Drive. Earn. Survive Europe">
+<meta property="og:description" content="Work bus shifts in London, Paris, Berlin, Rome & Amsterdam. Earn money, unlock cities, manage your life.">
+<meta name="theme-color" content="#0c1222">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600;700&display=swap');
+  
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0f0f13;
+    color: #fff;
+    font-family: 'Inter', system-ui, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+  }
+  
+  #game-container {
+    position: relative;
+    width: 100%;
+    max-width: 420px;
+    height: 100vh;
+    max-height: 800px;
+    background: #111;
+    overflow: hidden;
+    box-shadow: 0 0 40px rgba(0,0,0,0.8);
+  }
+  
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: #1a1a2e;
+  }
+  
+  .screen {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: linear-gradient(165deg, #0c1222 0%, #1a2744 45%, #0f1a2e 100%);
+    z-index: 10;
+    text-align: center;
+    overflow-y: auto;
+  }
+  
+  .screen.hidden { display: none; }
+  
+  /* City-themed hub backgrounds */
+  .screen.bg-london { background: linear-gradient(165deg, #1a1a2e 0%, #16213e 40%, #0f3460 100%); }
+  .screen.bg-paris { background: linear-gradient(165deg, #1b2838 0%, #2c3e50 40%, #1a5276 100%); }
+  .screen.bg-berlin { background: linear-gradient(165deg, #1c1c1c 0%, #2c2c2c 40%, #3d3d3d 100%); }
+  .screen.bg-rome { background: linear-gradient(165deg, #2c1810 0%, #4a2c1a 40%, #6b3a2a 100%); }
+  .screen.bg-amsterdam { background: linear-gradient(165deg, #0d2137 0%, #1a3a5c 40%, #0e4d7a 100%); }
+  
+  h1 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 1.35rem;
+    margin-bottom: 6px;
+    background: linear-gradient(90deg, #ff6b6b, #feca57, #48dbfb, #ff9ff3);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    line-height: 1.45;
+  }
+  
+  .subtitle {
+    font-size: 0.85rem;
+    opacity: 0.75;
+    margin-bottom: 18px;
+  }
+  
+  .city-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    width: 100%;
+    max-width: 340px;
+    margin-bottom: 12px;
+  }
+  
+  .city-card {
+    background: rgba(0,0,0,0.35);
+    border: 2px solid rgba(255,255,255,0.1);
+    border-radius: 14px;
+    padding: 14px 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+    backdrop-filter: blur(6px);
+  }
+  
+  .city-card:hover, .city-card:active {
+    background: rgba(255,255,255,0.1);
+    border-color: #48dbfb;
+    transform: scale(1.03);
+  }
+  
+  .city-card.selected {
+    border-color: #feca57;
+    background: rgba(254,202,87,0.18);
+    box-shadow: 0 0 20px rgba(254,202,87,0.15);
+  }
+  
+  .city-emoji { font-size: 2.2rem; margin-bottom: 6px; }
+  .city-name { font-weight: 700; font-size: 0.95rem; margin-bottom: 2px; }
+  .city-vehicle { font-size: 0.75rem; opacity: 0.7; }
+  
+  .btn {
+    background: linear-gradient(135deg, #e74c3c, #f39c12);
+    color: #fff;
+    border: none;
+    padding: 14px 32px;
+    border-radius: 50px;
+    font-weight: 700;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    margin-top: 8px;
+    box-shadow: 0 4px 16px rgba(231,76,60,0.3);
+  }
+  
+  .btn:active { transform: scale(0.96); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+  
+  .btn-secondary {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.2);
+    box-shadow: none;
+  }
+  
+  .life-bar {
+    width: 100%;
+    max-width: 340px;
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+    font-size: 0.72rem;
+  }
+  .life-stat {
+    flex: 1;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 8px 6px;
+    text-align: center;
+    backdrop-filter: blur(6px);
+  }
+  .life-stat strong { display: block; font-size: 0.95rem; color: #feca57; }
+  
+  #hud {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    pointer-events: none;
+    z-index: 5;
+    font-size: 0.85rem;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+  }
+  
+  .hud-left, .hud-right { display: flex; flex-direction: column; gap: 4px; }
+  .hud-stat { font-weight: 600; }
+  .hud-stat span { opacity: 0.8; font-weight: 400; }
+  
+  /* Status meters (fuel + food) */
+  #status-meters {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 10px;
+    z-index: 5;
+    pointer-events: none;
+  }
+  
+  .meter {
+    width: 64px;
+  }
+  
+  .meter .meter-label {
+    font-size: 0.58rem;
+    text-align: center;
+    margin-bottom: 2px;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.85);
+  }
+  
+  .meter .meter-bar-bg {
+    height: 6px;
+    background: rgba(0,0,0,0.55);
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.2);
+    overflow: hidden;
+  }
+  
+  .meter .meter-bar-fill {
+    height: 100%;
+    width: 100%;
+    border-radius: 3px;
+    transition: width 0.15s linear;
+  }
+  
+  #fuel-meter .meter-bar-fill {
+    background: linear-gradient(90deg, #e74c3c, #f39c12, #2ecc71);
+  }
+  
+  #food-meter .meter-bar-fill {
+    background: linear-gradient(90deg, #c0392b, #e67e22, #e74c3c);
+  }
+  
+  .meter.low .meter-bar-fill {
+    animation: fuel-pulse 0.55s ease-in-out infinite alternate;
+  }
+  
+  @keyframes fuel-pulse {
+    from { opacity: 0.65; }
+    to { opacity: 1; }
+  }
+  
+  /* Hub / Life sim UI – richer */
+  .hub-header {
+    width: 100%;
+    max-width: 340px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding: 12px 16px;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 14px;
+    font-size: 0.9rem;
+    backdrop-filter: blur(8px);
+  }
+  .hub-money { color: #f1c40f; font-weight: 700; font-size: 1.1rem; }
+  .hub-day { opacity: 0.8; font-size: 0.8rem; }
+  
+  .job-list {
+    width: 100%;
+    max-width: 340px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 10px 0 14px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .job-card {
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.12);
+    backdrop-filter: blur(6px);
+    border-radius: 12px;
+    padding: 12px 14px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.15s;
+  }
+  .job-card:hover {
+    border-color: #48dbfb;
+    background: rgba(72,219,251,0.1);
+  }
+  .job-card.selected {
+    border-color: #feca57;
+    background: rgba(254,202,87,0.15);
+    box-shadow: 0 0 16px rgba(254,202,87,0.12);
+  }
+  .job-card .job-title { font-weight: 700; font-size: 0.9rem; }
+  .job-card .job-meta { font-size: 0.75rem; opacity: 0.7; margin-top: 3px; }
+  
+  .city-status {
+    font-size: 0.7rem;
+    margin-top: 2px;
+    opacity: 0.65;
+  }
+  .city-card.locked {
+    opacity: 0.45;
+    pointer-events: none;
+  }
+  .city-card .lock-cost {
+    font-size: 0.7rem;
+    color: #f1c40f;
+    margin-top: 4px;
+  }
+  
+  .life-bar {
+    width: 100%;
+    max-width: 340px;
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+    font-size: 0.75rem;
+  }
+  .life-stat {
+    flex: 1;
+    background: rgba(255,255,255,0.06);
+    border-radius: 8px;
+    padding: 8px;
+    text-align: center;
+  }
+  .life-stat strong { display: block; font-size: 0.95rem; color: #feca57; }
+  
+  .tab-row {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+    width: 100%;
+    max-width: 340px;
+  }
+  .tab-btn {
+    flex: 1;
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.05);
+    color: #fff;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+  .tab-btn.active {
+    background: rgba(254,202,87,0.2);
+    border-color: #feca57;
+  }
+  
+  #speedometer {
+    position: absolute;
+    bottom: 100px;
+    right: 16px;
+    background: rgba(0,0,0,0.5);
+    padding: 8px 12px;
+    border-radius: 12px;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.7rem;
+    z-index: 5;
+  }
+  
+  #controls-hint {
+    position: absolute;
+    bottom: 20px;
+    left: 0; right: 0;
+    text-align: center;
+    font-size: 0.75rem;
+    opacity: 0.6;
+    z-index: 5;
+    pointer-events: none;
+  }
+  
+  #radio {
+    position: absolute;
+    bottom: 60px;
+    left: 16px;
+    background: rgba(0,0,0,0.55);
+    padding: 8px 12px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    z-index: 5;
+    max-width: 160px;
+  }
+  
+  .radio-station { font-weight: 600; color: #feca57; }
+  
+  #game-over-stats {
+    background: rgba(255,255,255,0.06);
+    border-radius: 16px;
+    padding: 20px;
+    margin: 16px 0;
+    width: 100%;
+    max-width: 300px;
+  }
+  
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    margin: 8px 0;
+    font-size: 0.95rem;
+  }
+  
+  .stat-row strong { color: #feca57; }
+  
+  #highscore {
+    font-size: 0.85rem;
+    opacity: 0.7;
+    margin-top: 8px;
+  }
+  
+  .instructions {
+    font-size: 0.8rem;
+    opacity: 0.7;
+    line-height: 1.5;
+    margin: 12px 0 20px;
+    max-width: 300px;
+  }
+  
+  #pause-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: rgba(0,0,0,0.5);
+    border: none;
+    color: #fff;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    font-size: 1.1rem;
+    cursor: pointer;
+    z-index: 6;
+    pointer-events: auto;
+  }
+
+  /* ========== MOBILE CONTROLS ========== */
+  #mobile-controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 160px;
+    z-index: 8;
+    pointer-events: none;
+    display: none;
+  }
+  
+  #mobile-controls.visible {
+    display: block;
+  }
+  
+  .m-btn {
+    position: absolute;
+    background: rgba(255,255,255,0.15);
+    border: 2px solid rgba(255,255,255,0.3);
+    border-radius: 50%;
+    color: #fff;
+    font-size: 1.4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    transition: background 0.1s, transform 0.1s;
+    backdrop-filter: blur(4px);
+  }
+  
+  .m-btn:active, .m-btn.active {
+    background: rgba(255,255,255,0.35);
+    transform: scale(0.92);
+  }
+  
+  #btn-left {
+    left: 16px;
+    bottom: 70px;
+    width: 64px;
+    height: 64px;
+  }
+  
+  #btn-right {
+    left: 92px;
+    bottom: 70px;
+    width: 64px;
+    height: 64px;
+  }
+  
+  #btn-gas {
+    right: 16px;
+    bottom: 90px;
+    width: 68px;
+    height: 68px;
+    background: rgba(46, 204, 113, 0.25);
+    border-color: rgba(46, 204, 113, 0.5);
+    font-size: 1rem;
+    font-weight: 700;
+  }
+  
+  #btn-gas.active {
+    background: rgba(46, 204, 113, 0.5);
+  }
+  
+  #btn-brake {
+    right: 16px;
+    bottom: 16px;
+    width: 68px;
+    height: 60px;
+    border-radius: 16px;
+    background: rgba(231, 76, 60, 0.25);
+    border-color: rgba(231, 76, 60, 0.5);
+    font-size: 0.85rem;
+    font-weight: 700;
+  }
+  
+  #btn-brake.active {
+    background: rgba(231, 76, 60, 0.55);
+  }
+  
+  #btn-hop {
+    right: 96px;
+    bottom: 90px;
+    width: 60px;
+    height: 60px;
+    background: rgba(52, 152, 219, 0.25);
+    border-color: rgba(52, 152, 219, 0.5);
+  }
+  
+  #btn-horn {
+    right: 96px;
+    bottom: 16px;
+    width: 52px;
+    height: 52px;
+    font-size: 1.2rem;
+    background: rgba(241, 196, 15, 0.25);
+    border-color: rgba(241, 196, 15, 0.5);
+  }
+  
+  #btn-radio {
+    left: 16px;
+    bottom: 16px;
+    width: 48px;
+    height: 48px;
+    font-size: 1.1rem;
+  }
+  
+  /* When mobile controls are active, shift HUD elements up */
+  body.mobile-playing #radio {
+    bottom: 175px;
+  }
+  
+  body.mobile-playing #speedometer {
+    bottom: 175px;
+  }
+  
+  body.mobile-playing #controls-hint {
+    display: none;
+  }
+  
+  /* Larger touch targets on very small screens */
+  @media (max-width: 380px) {
+    #btn-left, #btn-right, #btn-hop {
+      width: 56px;
+      height: 56px;
+    }
+    #btn-gas {
+      width: 64px;
+      height: 64px;
+    }
+    #btn-left { left: 12px; }
+    #btn-right { left: 76px; }
+    #btn-hop { right: 88px; }
+  }
+</style>
+</head>
+<body>
+<div id="game-container">
+  <canvas id="gameCanvas"></canvas>
+  
+  <!-- HUB / START SCREEN -->
+  <div id="start-screen" class="screen">
+    <h1>EURO LIFE</h1>
+    <p class="subtitle">Work. Earn. Move. Survive Europe.</p>
+    
+    <div class="hub-header">
+      <div class="hub-money" id="hub-money">€0</div>
+      <div class="hub-day" id="hub-day">Day 1 · London</div>
+    </div>
+    
+    <div class="life-bar">
+      <div class="life-stat"><strong id="hub-energy">100</strong>Energy</div>
+      <div class="life-stat"><strong id="hub-food">100</strong>Food</div>
+      <div class="life-stat"><strong id="hub-rep">50</strong>Rep</div>
+      <div class="life-stat"><strong id="hub-rent">€12</strong>Daily</div>
+    </div>
+    
+    <div class="tab-row" style="flex-wrap:wrap">
+      <button class="tab-btn active" data-tab="jobs">Jobs</button>
+      <button class="tab-btn" data-tab="travel">Travel</button>
+      <button class="tab-btn" data-tab="life">Life</button>
+      <button class="tab-btn" data-tab="home">Home</button>
+      <button class="tab-btn" data-tab="social">Social</button>
+      <button class="tab-btn" data-tab="saves">Saves</button>
+    </div>
+    
+    <!-- JOBS TAB -->
+    <div id="tab-jobs">
+      <div class="job-list" id="job-list"></div>
+      <button class="btn" id="start-btn" disabled>Choose a job</button>
+    </div>
+    
+    <!-- TRAVEL TAB -->
+    <div id="tab-travel" class="hidden">
+      <div class="city-grid" id="city-grid"></div>
+      <p class="instructions" style="margin-top:8px">Travel costs money & energy. Unlock cities by earning and working.</p>
+    </div>
+    
+    <!-- LIFE TAB -->
+    <div id="tab-life" class="hidden">
+      <div class="job-list" id="life-actions"></div>
+      <p class="instructions">Rest, eat, or handle daily life. Watch energy & food.</p>
+    </div>
+    
+    <!-- HOME TAB -->
+    <div id="tab-home" class="hidden">
+      <div class="job-list" id="home-list"></div>
+      <p class="instructions">Upgrade housing to cut daily costs and boost energy recovery.</p>
+    </div>
+    
+    <!-- SOCIAL TAB -->
+    <div id="tab-social" class="hidden">
+      <div class="job-list" id="social-list"></div>
+      <p class="instructions" id="social-lock-msg">Build relationships. Radio chat unlocks after 5 successful shifts.</p>
+    </div>
+    
+    <!-- SAVES TAB -->
+    <div id="tab-saves" class="hidden">
+      <div class="job-list" id="saves-list"></div>
+      <p class="instructions">3 save slots. Switch lives anytime.</p>
+    </div>
+  </div>
+  
+  <!-- RANDOM EVENT MODAL -->
+  <div id="event-modal" class="screen hidden" style="background:rgba(0,0,0,0.85);z-index:20">
+    <h1 style="font-size:1rem" id="event-title">Event</h1>
+    <p class="subtitle" id="event-desc" style="max-width:300px;line-height:1.5"></p>
+    <div id="event-choices" style="display:flex;flex-direction:column;gap:8px;width:100%;max-width:300px"></div>
+  </div>
+  
+  <!-- GAME OVER SCREEN -->
+  <div id="gameover-screen" class="screen hidden">
+    <h1>END OF THE LINE</h1>
+    <p id="gameover-city" class="subtitle"></p>
+    
+    <div id="game-over-stats">
+      <div class="stat-row"><span>Score</span><strong id="final-score">0</strong></div>
+      <div class="stat-row"><span>Distance</span><strong id="final-distance">0 km</strong></div>
+      <div class="stat-row"><span>Passengers</span><strong id="final-passengers">0</strong></div>
+      <div class="stat-row"><span>Shift earnings</span><strong id="final-fares">€0</strong></div>
+      <div class="stat-row"><span>Close calls</span><strong id="final-closecalls">0</strong></div>
+    </div>
+    
+    <p id="highscore"></p>
+    
+    <div id="local-board" style="width:100%;max-width:300px;margin:10px 0;text-align:left;font-size:0.8rem;background:rgba(0,0,0,0.3);border-radius:12px;padding:12px"></div>
+    
+    <button class="btn" id="share-btn" style="margin-top:6px">📤 Share score</button>
+    <button class="btn" id="retry-btn">Back to hub</button>
+    <button class="btn btn-secondary" id="menu-btn" style="margin-top:10px">Hub menu</button>
+  </div>
+  
+  <!-- PAUSE SCREEN -->
+  <div id="pause-screen" class="screen hidden">
+    <h1>PAUSED</h1>
+    <button class="btn" id="resume-btn">Resume</button>
+    <button class="btn btn-secondary" id="quit-btn" style="margin-top:10px">Quit to Menu</button>
+  </div>
+  
+  <!-- IN-GAME HUD -->
+  <div id="hud" class="hidden">
+    <div class="hud-left">
+      <div class="hud-stat"><span id="city-label">London</span></div>
+      <div class="hud-stat">👥 <span id="passengers">0</span>/<span id="capacity">20</span></div>
+      <div class="hud-stat">💶 <span id="run-money">0</span></div>
+    </div>
+    <div class="hud-right">
+      <div class="hud-stat"><span id="distance">0.0</span> km</div>
+      <div class="hud-stat">⭐ <span id="score">0</span></div>
+    </div>
+  </div>
+  
+  <!-- Status meters (fuel + food) -->
+  <div id="status-meters" class="hidden">
+    <div class="meter" id="fuel-meter">
+      <div class="meter-label">⛽ <span id="fuel-percent">100</span>%</div>
+      <div class="meter-bar-bg"><div class="meter-bar-fill" id="fuel-bar"></div></div>
+    </div>
+    <div class="meter" id="food-meter">
+      <div class="meter-label">🍔 <span id="food-percent">100</span>%</div>
+      <div class="meter-bar-bg"><div class="meter-bar-fill" id="food-bar"></div></div>
+    </div>
+  </div>
+  
+  <div id="speedometer" class="hidden">0 km/h</div>
+  <div id="radio" class="hidden">
+    <div class="radio-station" id="radio-name">BBC Radio 1</div>
+    <div id="radio-track">Now playing...</div>
+  </div>
+  <div id="controls-hint" class="hidden">← → lanes · ↑ gas · ↓ brake · Space hop · H horn</div>
+  
+  <button id="pause-btn" class="hidden">⏸</button>
+  
+  <!-- MOBILE ON-SCREEN CONTROLS -->
+  <div id="mobile-controls">
+    <button class="m-btn" id="btn-left" aria-label="Left">◀</button>
+    <button class="m-btn" id="btn-right" aria-label="Right">▶</button>
+    <button class="m-btn" id="btn-gas" aria-label="Gas">GAS</button>
+    <button class="m-btn" id="btn-brake" aria-label="Brake">BRAKE</button>
+    <button class="m-btn" id="btn-hop" aria-label="Hop">⬆</button>
+    <button class="m-btn" id="btn-horn" aria-label="Horn">📯</button>
+    <button class="m-btn" id="btn-radio" aria-label="Radio">📻</button>
+  </div>
+</div>
+
+<script>
+// ==================== CITY DATA ====================
+const CITIES = {
+  london: {
+    id: 'london',
+    name: 'London',
+    emoji: '🇬🇧',
+    vehicle: 'Red Double-Decker',
+    vehicleEmoji: '🚌',
+    capacity: 22,
+    currency: '£',
+    baseFare: 2.8,
+    roadColor: '#2c3e50',
+    laneColor: '#34495e',
+    accent: '#e74c3c',
+    skyColor: ['#87CEEB', '#5DADE2'],
+    obstacles: [
+      { type: 'blackcab', emoji: '🚕', w: 36, h: 50, danger: true },
+      { type: 'cyclist', emoji: '🚴', w: 24, h: 40, danger: true },
+      { type: 'tourist', emoji: '🧳', w: 28, h: 40, danger: true },
+      { type: 'roadwork', emoji: '🚧', w: 50, h: 40, danger: true },
+      { type: 'pigeon', emoji: '🕊️', w: 20, h: 20, danger: false }
+    ],
+    passengers: ['Tourist', 'Banker', 'Student', 'Nurse', 'Builder', 'Artist'],
+    radio: [
+      { name: 'BBC Radio 1', tracks: ['Pop hits', 'Chart show', 'Dance mix'] },
+      { name: 'Capital FM', tracks: ['Breakfast show', 'Drive time', 'Hits'] },
+      { name: 'Absolute Radio', tracks: ['Classic rock', 'Indie hour'] }
+    ],
+    phrases: {
+      start: 'Mind the gap!',
+      crash: 'Oi! Watch it!',
+      pickup: 'All aboard!',
+      horn: 'Honk!'
+    },
+    landmark: 'Big Ben'
+  },
+  
+  paris: {
+    id: 'paris',
+    name: 'Paris',
+    emoji: '🇫🇷',
+    vehicle: 'RATP Bus',
+    vehicleEmoji: '🚌',
+    capacity: 20,
+    currency: '€',
+    baseFare: 2.1,
+    roadColor: '#2c3e50',
+    laneColor: '#34495e',
+    accent: '#3498db',
+    skyColor: ['#AED6F1', '#5DADE2'],
+    obstacles: [
+      { type: 'scooter', emoji: '🛵', w: 28, h: 40, danger: true },
+      { type: 'cyclist', emoji: '🚴', w: 24, h: 40, danger: true },
+      { type: 'tourist', emoji: '📸', w: 28, h: 40, danger: true },
+      { type: 'strike', emoji: '🪧', w: 40, h: 50, danger: true },
+      { type: 'baguette', emoji: '🥖', w: 20, h: 30, danger: false }
+    ],
+    passengers: ['Touriste', 'Étudiant', 'Boulanger', 'Artiste', 'Cadre', 'Chauffeur'],
+    radio: [
+      { name: 'NRJ Paris', tracks: ['Hits français', 'Dance'] },
+      { name: 'France Inter', tracks: ['Actualités', 'Culture'] },
+      { name: 'Radio Nova', tracks: ['Éclectique', 'World music'] }
+    ],
+    phrases: {
+      start: 'Attention à la marche !',
+      crash: 'Mais non !',
+      pickup: 'Montez !',
+      horn: 'Tut-tut!'
+    },
+    landmark: 'Tour Eiffel'
+  },
+  
+  berlin: {
+    id: 'berlin',
+    name: 'Berlin',
+    emoji: '🇩🇪',
+    vehicle: 'BVG Bus / Tram',
+    vehicleEmoji: '🚋',
+    capacity: 24,
+    currency: '€',
+    baseFare: 3.2,
+    roadColor: '#1c2833',
+    laneColor: '#2c3e50',
+    accent: '#f1c40f',
+    skyColor: ['#85929E', '#5D6D7E'],
+    obstacles: [
+      { type: 'tram', emoji: '🚋', w: 50, h: 55, danger: true },
+      { type: 'cyclist', emoji: '🚴', w: 24, h: 40, danger: true },
+      { type: 'ebike', emoji: '🚲', w: 26, h: 40, danger: true },
+      { type: 'construction', emoji: '🏗️', w: 45, h: 50, danger: true },
+      { type: 'döner', emoji: '🥙', w: 22, h: 22, danger: false }
+    ],
+    passengers: ['Student', 'Techno fan', 'Engineer', 'Artist', 'Expat', 'Oma'],
+    radio: [
+      { name: 'Fritz', tracks: ['Indie', 'Alternative'] },
+      { name: 'Radio Eins', tracks: ['Rock', 'Pop'] },
+      { name: 'FluxFM', tracks: ['Electronic', 'Techno'] }
+    ],
+    phrases: {
+      start: 'Einstieg bitte!',
+      crash: 'Achtung!',
+      pickup: 'Bitte einsteigen!',
+      horn: 'Hupe!'
+    },
+    landmark: 'Brandenburg Gate'
+  },
+  
+  rome: {
+    id: 'rome',
+    name: 'Rome',
+    emoji: '🇮🇹',
+    vehicle: 'ATAC Bus',
+    vehicleEmoji: '🚌',
+    capacity: 18,
+    currency: '€',
+    baseFare: 1.5,
+    roadColor: '#3d2b1f',
+    laneColor: '#4a3728',
+    accent: '#27ae60',
+    skyColor: ['#F5B041', '#E67E22'],
+    obstacles: [
+      { type: 'vespa', emoji: '🛵', w: 26, h: 38, danger: true },
+      { type: 'car', emoji: '🚗', w: 38, h: 48, danger: true },
+      { type: 'tourist', emoji: '📷', w: 28, h: 40, danger: true },
+      { type: 'ruins', emoji: '🏛️', w: 45, h: 45, danger: true },
+      { type: 'gelato', emoji: '🍦', w: 20, h: 25, danger: false }
+    ],
+    passengers: ['Turista', 'Studente', 'Nonna', 'Artista', 'Pizzaiolo', 'Impiegato'],
+    radio: [
+      { name: 'Radio Deejay', tracks: ['Hit italiani', 'Dance'] },
+      { name: 'RDS', tracks: ['Pop', 'News'] },
+      { name: 'Radio Italia', tracks: ['Canzoni italiane'] }
+    ],
+    phrases: {
+      start: 'Attenzione!',
+      crash: 'Madonna!',
+      pickup: 'Salite!',
+      horn: 'Clacson!'
+    },
+    landmark: 'Colosseum'
+  },
+  
+  amsterdam: {
+    id: 'amsterdam',
+    name: 'Amsterdam',
+    emoji: '🇳🇱',
+    vehicle: 'GVB Tram',
+    vehicleEmoji: '🚊',
+    capacity: 26,
+    currency: '€',
+    baseFare: 3.4,
+    roadColor: '#1a5276',
+    laneColor: '#2471a3',
+    accent: '#e74c3c',
+    skyColor: ['#85C1E9', '#3498DB'],
+    obstacles: [
+      { type: 'bike', emoji: '🚲', w: 24, h: 40, danger: true },
+      { type: 'cargobike', emoji: '🚚', w: 40, h: 45, danger: true },
+      { type: 'tourist', emoji: '📷', w: 28, h: 40, danger: true },
+      { type: 'canal', emoji: '🛶', w: 50, h: 30, danger: true },
+      { type: 'stroopwafel', emoji: '🍪', w: 22, h: 22, danger: false }
+    ],
+    passengers: ['Student', 'Tourist', 'Cyclist', 'Local', 'Expat', 'Oma'],
+    radio: [
+      { name: 'NPO 3FM', tracks: ['Pop', 'Alternative'] },
+      { name: 'Radio 538', tracks: ['Dance', 'Hits'] },
+      { name: 'Sky Radio', tracks: ['Non-stop hits'] }
+    ],
+    phrases: {
+      start: 'Instappen!',
+      crash: 'Pas op!',
+      pickup: 'Kom binnen!',
+      horn: 'Toeter!'
+    },
+    landmark: 'Canals'
+  }
+};
+
+// ==================== PROGRESS / LIFE SIM ====================
+const JOBS = {
+  day:   { id: 'day',   title: 'Day Route',        payMult: 1.0, energyCost: 15, difficulty: 1, desc: 'Standard shift · steady traffic' },
+  night: { id: 'night', title: 'Night Shift',      payMult: 1.6, energyCost: 25, difficulty: 1.3, desc: 'Higher pay · denser chaos · night roads' },
+  tour:  { id: 'tour',  title: 'Tourist Circuit',  payMult: 1.3, energyCost: 18, difficulty: 1.1, desc: 'More stops · better tips' },
+  express:{ id: 'express', title: 'Express Line',  payMult: 1.8, energyCost: 30, difficulty: 1.5, desc: 'Fast · fewer stops · risky' }
+};
+
+const CITY_UNLOCK = {
+  london:    { cost: 0,   energy: 0,  minRep: 0  },
+  paris:     { cost: 80,  energy: 20, minRep: 20 },
+  berlin:    { cost: 120, energy: 25, minRep: 35 },
+  rome:      { cost: 150, energy: 30, minRep: 45 },
+  amsterdam: { cost: 100, energy: 22, minRep: 30 }
+};
+
+const HOUSING = {
+  hostel:  { id: 'hostel',  name: 'Hostel bunk',     cost: 0,   daily: 1.0,  energyBonus: 0,  desc: 'Cheap · noisy · basic' },
+  studio:  { id: 'studio',  name: 'Studio flat',     cost: 120, daily: 0.75, energyBonus: 8,  desc: 'Quiet · better rest' },
+  flat:    { id: 'flat',    name: '1-bed apartment', cost: 280, daily: 0.55, energyBonus: 15, desc: 'Comfortable · lower bills' },
+  loft:    { id: 'loft',    name: 'City loft',       cost: 500, daily: 0.4,  energyBonus: 22, desc: 'Premium · top recovery' }
+};
+
+const RELATIONSHIPS = [
+  { id: 'colleague', name: 'Depot colleague', emoji: '👷' },
+  { id: 'neighbour', name: 'Neighbour', emoji: '🏠' },
+  { id: 'friend', name: 'Local friend', emoji: '👋' },
+  { id: 'partner', name: 'Partner', emoji: '💕' }
+];
+
+const RANDOM_EVENTS = [
+  { title: 'Strike day', desc: 'Transport workers are striking. Extra chaos on the roads — or stay home?', choices: [
+    { label: 'Work anyway (+pay risk)', fn: (p) => { p._eventPayBonus = 1.4; p._eventDiff = 1.3; } },
+    { label: 'Stay home (−€5, +10 energy)', fn: (p) => { p.money = Math.max(0, p.money - 5); p.energy = Math.min(100, p.energy + 10); } }
+  ]},
+  { title: 'Tourist boom', desc: 'A festival flooded the city with visitors.', choices: [
+    { label: 'Take tourist routes (+stops)', fn: (p) => { p._eventTour = true; p._eventPayBonus = 1.2; } },
+    { label: 'Ignore it', fn: () => {} }
+  ]},
+  { title: 'Friend needs help', desc: 'Your neighbour asks for a small loan.', choices: [
+    { label: 'Lend €15 (+relationship)', fn: (p) => { if (p.money >= 15) { p.money -= 15; p.relationships.neighbour = Math.min(100, (p.relationships.neighbour||0) + 15); } } },
+    { label: 'Decline (−relationship)', fn: (p) => { p.relationships.neighbour = Math.max(0, (p.relationships.neighbour||0) - 8); } }
+  ]},
+  { title: 'Health check', desc: 'You feel run down after too many shifts.', choices: [
+    { label: 'Clinic visit (−€20, +25 energy)', fn: (p) => { if (p.money >= 20) { p.money -= 20; p.energy = Math.min(100, p.energy + 25); p.food = Math.min(100, p.food + 10); } } },
+    { label: 'Push through (−10 energy)', fn: (p) => { p.energy = Math.max(0, p.energy - 10); } }
+  ]},
+  { title: 'Depot bonus', desc: 'Management offers a short bonus shift.', choices: [
+    { label: 'Take it (+€20, −12 energy)', fn: (p) => { p.money += 20; p.energy = Math.max(0, p.energy - 12); p.successfulShifts = (p.successfulShifts||0) + 1; } },
+    { label: 'Decline', fn: () => {} }
+  ]},
+  { title: 'Rainy evening', desc: 'Heavy rain. Night roads will be slippery.', choices: [
+    { label: 'Drive carefully', fn: (p) => { p._eventDiff = 1.15; } },
+    { label: 'Rest instead', fn: (p) => { p.energy = Math.min(100, p.energy + 15); p.food = Math.max(0, p.food - 5); } }
+  ]},
+  { title: 'Fuel price spike', desc: 'Petrol jumped overnight. Fuel will burn faster on your next run.', choices: [
+    { label: 'Accept it', fn: (p) => { p._eventFuelTax = 1.4; } },
+    { label: 'Buy a can early (−€10, full tank later)', fn: (p) => { if (p.money >= 10) { p.money -= 10; p._eventFuelTax = 0.7; } } }
+  ]},
+  { title: 'Inspection day', desc: 'LASTMA-style inspectors are out. Drive clean for reputation.', choices: [
+    { label: 'Play it safe', fn: (p) => { p._eventDiff = 1.1; p.reputation = Math.min(100, p.reputation + 2); } },
+    { label: 'Business as usual', fn: () => {} }
+  ]},
+  { title: 'Date night?', desc: 'Someone special asked you out this evening.', choices: [
+    { label: 'Go (−€18, +partner bond, −energy)', fn: (p) => { if (p.money >= 18) { p.money -= 18; p.energy = Math.max(0, p.energy - 10); p.relationships.partner = Math.min(100, (p.relationships.partner||0) + 20); } } },
+    { label: 'Work instead', fn: (p) => { p.relationships.partner = Math.max(0, (p.relationships.partner||0) - 5); } }
+  ]},
+  { title: 'Street food festival', desc: 'Cheap eats everywhere in the city centre.', choices: [
+    { label: 'Feast (−€6, +40 food, +8 energy)', fn: (p) => { if (p.money >= 6) { p.money -= 6; p.food = Math.min(100, p.food + 40); p.energy = Math.min(100, p.energy + 8); } } },
+    { label: 'Skip', fn: () => {} }
+  ]},
+  { title: 'Rival driver challenge', desc: 'Another driver bets you can\'t top their score today.', choices: [
+    { label: 'Accept (+motivation, harder traffic)', fn: (p) => { p._eventPayBonus = 1.25; p._eventDiff = 1.25; } },
+    { label: 'Ignore the trash talk', fn: () => {} }
+  ]},
+  { title: 'Lost tourist', desc: 'A lost tourist offers a tip if you help.', choices: [
+    { label: 'Help (+€12, +rep)', fn: (p) => { p.money += 12; p.reputation = Math.min(100, p.reputation + 3); } },
+    { label: 'No time', fn: () => {} }
+  ]}
+];
+
+// Local leaderboard (device)
+const LB_KEY = 'euroLifeLeaderboard';
+function getLeaderboard() {
+  try { return JSON.parse(localStorage.getItem(LB_KEY) || '[]'); } catch(e) { return []; }
+}
+function addToLeaderboard(entry) {
+  let board = getLeaderboard();
+  board.push(entry);
+  board.sort((a, b) => b.score - a.score);
+  board = board.slice(0, 10);
+  localStorage.setItem(LB_KEY, JSON.stringify(board));
+  return board;
+}
+function renderLeaderboard(containerId, highlightScore) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const board = getLeaderboard();
+  if (!board.length) {
+    el.innerHTML = '<div style="opacity:0.6">No scores yet — finish a shift!</div>';
+    return;
+  }
+  el.innerHTML = '<div style="font-weight:700;margin-bottom:6px">🏆 Local top 10</div>' +
+    board.map((e, i) => {
+      const hi = highlightScore != null && e.score === highlightScore;
