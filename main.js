@@ -492,3 +492,99 @@ function social5(){
 }
 window.story=story;window.completeStory=completeStory;window.vehicles=vehicles;window.buyVehicle=buyVehicle;window.drive=drive;window.police=police;window.relationship=relationship;window.datePerson=datePerson;window.business=business;window.buyBusiness=buyBusiness;window.nightlife=nightlife;
 window.phone=richPhone;window.social=social5;
+
+
+// ===== EURO LIFE PHASE 6: PLAYABLE CITY / BUILDING INTERACTIONS =====
+const WORLD6=[
+ {name:'Montmartre Apartment',x:-30,z:-30,type:'home',icon:'🏠',desc:'Your building · rest, shower and recover'},
+ {name:'Haussmann House',x:-14,z:-30,type:'housing',icon:'🏢',desc:'Neighbourhood apartments'},
+ {name:'Hotel',x:30,z:-30,type:'hotel',icon:'🏨',desc:'Temporary accommodation and social life'},
+ {name:'Tech Hub Paris',x:30,z:-14,type:'work',icon:'💻',desc:'Professional jobs and career progression'},
+ {name:'Bakery',x:-30,z:30,type:'food',icon:'🥖',desc:'Fresh food and quick energy'},
+ {name:'Market',x:-14,z:30,type:'shop',icon:'🛍️',desc:'Food, outfits and everyday items'},
+ {name:'Cinema',x:30,z:30,type:'fun',icon:'🎬',desc:'Relax, meet people and improve your mood'},
+ {name:'Café des Artistes',x:-8,z:-8,type:'work',icon:'☕',desc:'Your easiest first job'}
+];
+WORLD6.forEach(p=>{
+ if(!points.some(x=>x.name===p.name)) points.push({name:p.name,x:p.x,z:p.z,fn:()=>enterPlace6(p)});
+});
+function enterPlace6(p){
+ if(p.type==='home'){home();return;}
+ if(p.type==='work'){
+  modal('<h2>'+p.icon+' '+p.name+'</h2><p>'+p.desc+'</p><div class="grid"><button class="action primary" onclick="window.jobApp()">💼 WORK</button><button class="action" onclick="window.closeModal();toast('You entered '+p.name+'.')">LOOK AROUND</button></div><button class="action wide" onclick="window.closeModal()">LEAVE</button>');
+  return;
+ }
+ if(p.type==='food'){
+  modal('<h2>🥖 '+p.name+'</h2><p>'+p.desc+'</p><button class="action primary wide" onclick="window.buyFood6()">BUY FOOD · €20</button><button class="action wide" onclick="window.closeModal()">LEAVE</button>');
+  return;
+ }
+ if(p.type==='shop'){shop();return;}
+ if(p.type==='fun'){
+  modal('<h2>🎬 '+p.name+'</h2><p>'+p.desc+'</p><button class="action primary wide" onclick="window.cinema6()">WATCH A FILM · €18</button><button class="action wide" onclick="window.closeModal()">LEAVE</button>');
+  return;
+ }
+ if(p.type==='hotel'){
+  modal('<h2>🏨 '+p.name+'</h2><p>'+p.desc+'</p><button class="action primary wide" onclick="window.hotel6()">REST · €45</button><button class="action wide" onclick="window.closeModal()">LEAVE</button>');
+ }
+}
+function buyFood6(){
+ if(S.money<20)return toast('You need €20.');
+ S.money-=20;S.hunger=clamp(S.hunger+45);S.energy=clamp(S.energy+8);S.foodBought=(S.foodBought||0)+1;S.fun=clamp(S.fun+5);save();ui();close();toast('🥖 Bakery meal · +45 hunger');
+}
+function cinema6(){
+ if(S.money<18)return toast('You need €18.');
+ if(S.energy<4)return toast('You are too tired.');
+ S.money-=18;S.hour+=2;S.energy=clamp(S.energy-4);S.fun=clamp(S.fun+32);S.social=clamp(S.social+8);save();ui();close();toast('🎬 Great film · fun +32');
+}
+function hotel6(){
+ if(S.money<45)return toast('You need €45.');
+ S.money-=45;S.hour+=1;S.energy=clamp(S.energy+18);S.hygiene=clamp(S.hygiene+10);S.fun=clamp(S.fun+8);save();ui();close();toast('🏨 You rested at the hotel.');
+}
+window.buyFood6=buyFood6;window.cinema6=cinema6;window.hotel6=hotel6;window.enterPlace6=enterPlace6;
+
+// Give NPCs real proximity interactions.
+npcs.forEach(n=>{
+ if(!points.some(p=>p.name===n.name)) points.push({name:n.name,x:n.x,z:n.z,fn:()=>relationship(n.name)});
+});
+
+// Mobile tap: tap the world to walk toward a point, double-tap to interact.
+const ray6=new THREE.Raycaster(),tap6=new THREE.Vector2();
+renderer.domElement.addEventListener('pointerdown',e=>{
+ if(e.pointerType==='touch')return;
+ const r=renderer.domElement.getBoundingClientRect();
+ tap6.x=((e.clientX-r.left)/r.width)*2-1;tap6.y=-((e.clientY-r.top)/r.height)*2+1;
+ ray6.setFromCamera(tap6,camera);
+ const hit=ray6.intersectObjects(scene.children,true)[0];
+ if(!hit)return;
+ const p=hit.point;
+ if(mode==='city'){player.position.x=clamp(p.x,-39,39);player.position.z=clamp(p.z,-39,39);toast('📍 Walking there…');}
+});
+
+// Contextual interaction is always available on mobile via a dedicated hint tap.
+$('hint').style.pointerEvents='auto';
+$('hint').onclick=()=>interact();
+
+// Make the phone the universal life hub.
+$('phoneFloat').onclick=()=>richPhone();
+$('home').onclick=()=>mode==='home'?city():home();
+$('map').onclick=()=>map();
+$('job').onclick=()=>jobApp();
+$('eat').onclick=()=>eat();
+$('socialBtn').onclick=()=>social5();
+
+// Prevent entering buildings while exhausted; reward exploration.
+const _interact6=streetInteract;
+streetInteract=function(){
+ const before=near&&near.p?near.p.name:null;
+ _interact6();
+ if(before && S.energy<10)toast('⚡ You are exhausted — find somewhere to rest.');
+};
+
+// Autosave while playing.
+let saveClock6=0;
+const _phase6Loop=loop;
+loop=function(t){
+ const dt=Math.min(.05,(t-(loop.last||t))/1000);loop.last=t;
+ saveClock6+=dt;if(saveClock6>8){save();saveClock6=0;}
+ _phase6Loop(t);
+};
