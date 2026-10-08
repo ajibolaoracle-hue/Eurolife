@@ -244,3 +244,53 @@ window.travelTo=travel;window.chooseHome=chooseHome;window.hangout=hangout;windo
 $('home').onclick=()=>mode==='home'?city():home();$('phone').onclick=phone;$('phoneFloat').onclick=phone;$('map').onclick=map;$('job').onclick=jobApp;$('eat').onclick=eat;$('socialBtn').onclick=social;
 
 ui();progressUnlocks();if(!localStorage.getItem('eurolife-life-seen')){localStorage.setItem('eurolife-life-seen','1');setTimeout(creator,500)}requestAnimationFrame(loop);addEventListener('resize',()=>{let a=innerWidth/innerHeight,c=10*a;camera.left=-c;camera.right=c;camera.top=10;camera.bottom=-10;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+
+
+// ===== EURO LIFE PHASE 3: LIVING WORLD + EVENTS + ACTIVE GAMEPLAY =====
+const EVENTS=[
+  {title:'☕ Café Rush',text:'The café is packed. Take the extra shift for a cash bonus, but lose more energy.',ok:'TAKE EXTRA SHIFT',fn:()=>{if(S.energy<28)return toast('Too tired for the rush.');S.money+=55;S.totalEarned+=55;S.energy=clamp(S.energy-18);S.hunger=clamp(S.hunger-5);awardXP(6);toast('☕ Rush finished · +€55 · +6 XP');}},
+  {title:'💶 Wallet on the pavement',text:'You spot €30 near the Metro entrance.',ok:'PICK IT UP',fn:()=>{S.money+=30;S.mood=clamp(S.mood+3);toast('💶 You found €30. Lucky day!');}},
+  {title:'🤝 New connection',text:'A local asks what you do in Paris. Your answer could become a useful connection.',ok:'TALK',fn:()=>{S.social=clamp(S.social+10);S.friends.Noah=clamp((S.friends.Noah||0)+8);awardXP(4);toast('🤝 New connection · +8 friendship');}},
+  {title:'🚇 Metro delay',text:'The Metro is delayed. Pay for a faster ride or lose an hour.',ok:'PAY €8',fn:()=>{if(S.money<8){S.hour+=1;toast('🚇 No cash — you waited an hour.');}else{S.money-=8;toast('🚇 Express ride · -€8');}}},
+  {title:'🛒 Grocery deal',text:'A market near your home has a cheap food bundle.',ok:'BUY €20',fn:()=>{if(S.money<20)return toast('Not enough money.');S.money-=20;S.hunger=clamp(S.hunger+45);toast('🛒 Groceries stocked · +45 hunger');}}
+];
+let eventCooldown=0;
+function randomLifeEvent(){
+  if(mode!=='city'||eventCooldown>0||Math.random()>0.12)return;
+  eventCooldown=18;
+  const e=EVENTS[Math.floor(Math.random()*EVENTS.length)];
+  modal('<h2>'+e.title+'</h2><p>'+e.text+'</p><button class="action primary wide" id="eventAction">'+e.ok+'</button><button class="action wide" id="eventSkip">IGNORE</button>');
+  $('eventAction').onclick=()=>{e.fn();close();save();ui();};
+  $('eventSkip').onclick=()=>{close();toast('You kept walking.');};
+}
+function streetInteract(){
+  if(mode!=='city')return interact();
+  const x=player.position.x,z=player.position.z;
+  if(Math.hypot(x+8,z+8)<5)return work();
+  if(Math.hypot(x-8,z-8)<5)return map();
+  if(Math.hypot(x,z)<5){
+    modal('<h2>🚇 Montmartre Hub</h2><p>Choose what to do next.</p><div class="grid"><button class="action primary" onclick="window.jobApp()">💼 FIND WORK</button><button class="action" onclick="window.map()">🗺️ TRAVEL</button><button class="action" onclick="window.social()">❤️ SOCIAL</button><button class="action" onclick="window.phone()">📱 PHONE</button></div>');
+    return;
+  }
+  interact();
+}
+window.interact=streetInteract;
+function restOnBench(){
+  if(S.energy>88)return toast('You are already rested.');
+  advance(1);S.energy=clamp(S.energy+18);S.fun=clamp(S.fun+5);save();ui();toast('🪑 You rested for an hour.');
+}
+function openStreetShop(){
+  if(S.money<18)return toast('You need €18.');
+  S.money-=18;S.hunger=clamp(S.hunger+35);S.energy=clamp(S.energy+8);save();ui();toast('🥖 Street food · -€18 · +35 hunger');
+}
+function updateWorldClock(dt){
+  eventCooldown=Math.max(0,eventCooldown-dt);
+  if(mode==='city'&&S.hour>=18&&S.hour<22&&Math.random()<dt*.018)randomLifeEvent();
+}
+const _loop=loop;
+loop=function(t){
+  updateWorldClock(Math.min(.05,(t-(loop.last||t))/1000));
+  _loop(t);
+};
+document.addEventListener('keydown',e=>{if(e.key.toLowerCase()==='e')streetInteract();});
+window.restOnBench=restOnBench;window.openStreetShop=openStreetShop;
