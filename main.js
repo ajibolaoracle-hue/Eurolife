@@ -294,3 +294,90 @@ loop=function(t){
 };
 document.addEventListener('keydown',e=>{if(e.key.toLowerCase()==='e')streetInteract();});
 window.restOnBench=restOnBench;window.openStreetShop=openStreetShop;
+
+
+// ===== EURO LIFE PHASE 4: MISSIONS, NPC ROUTINES, SHOPS, TRANSPORT & RISK =====
+S.reputation=Number(S.reputation||0);S.risk=Number(S.risk||0);S.missions=Array.isArray(S.missions)?S.missions:[];S.completedMissions=Number(S.completedMissions||0);S.inventory=Array.isArray(S.inventory)?S.inventory:[];
+
+const MISSION_POOL=[
+ {id:'first-shift',title:'First Steps',text:'Complete your first work shift.',goal:1,reward:70,xp:10,kind:'work'},
+ {id:'food-run',title:'Stay Fed',text:'Buy food twice.',goal:2,reward:55,xp:8,kind:'food'},
+ {id:'social-call',title:'Know Your Neighbours',text:'Spend time with a friend twice.',goal:2,reward:80,xp:12,kind:'social'},
+ {id:'career-climb',title:'Career Climb',text:'Reach 50 career XP.',goal:50,reward:140,xp:20,kind:'xp'}
+];
+function missionValue(m){
+  if(m.kind==='work')return S.totalWorked>0?1:0;
+  if(m.kind==='food')return Number(S.foodBought||0);
+  if(m.kind==='social')return Number(S.socialMeetups||0);
+  if(m.kind==='xp')return S.xp;
+  return 0;
+}
+function ensureMissions(){
+  MISSION_POOL.forEach(m=>{if(!S.missions.some(x=>x.id===m.id))S.missions.push({id:m.id,claimed:false});});
+}
+function missions(){
+  ensureMissions();
+  const cards=MISSION_POOL.map(m=>{
+    const state=S.missions.find(x=>x.id===m.id),v=Math.min(m.goal,missionValue(m)),done=v>=m.goal;
+    return '<div class="card"><b>🎯 '+m.title+'</b><small>'+m.text+'</small><small>Progress '+v+'/'+m.goal+' · Reward '+money(m.reward)+' + '+m.xp+' XP</small><button class="action '+(done&&!state.claimed?'primary':'')+' wide" '+(done&&!state.claimed?'onclick="window.claimMission(\''+m.id+'\')"':'disabled')+'>'+(state.claimed?'CLAIMED':done?'CLAIM REWARD':'IN PROGRESS')+'</button></div>';
+  }).join('');
+  modal('<h2>🎯 Missions</h2><p>Small goals make each day feel like a story. Complete them for cash, XP and reputation.</p><div class="grid">'+cards+'</div><button class="action wide" onclick="window.closeModal()">CLOSE</button>');
+}
+function claimMission(id){
+  const m=MISSION_POOL.find(x=>x.id===id),s=S.missions.find(x=>x.id===id);
+  if(!m||!s||s.claimed||missionValue(m)<m.goal)return;
+  s.claimed=true;S.money+=m.reward;S.reputation=clamp(S.reputation+5);awardXP(m.xp);S.completedMissions++;save();ui();missions();toast('🎯 Mission complete · +'+money(m.reward));
+}
+function addWorldBuilding(x,z,w,d,h,color,label,action){
+  building(x,z,w,d,h,M(color),label);
+  const p={name:label,x,z,fn:action};points.push(p);
+}
+function shop(){
+  modal('<h2>🛍️ Shops</h2><p>Spend money to improve your day. Items are stored in your inventory.</p><div class="grid">'+[
+    ['🥖 Food basket',20,()=>{S.foodBought=(S.foodBought||0)+1;S.hunger=clamp(S.hunger+42);S.inventory.push('Food');toast('🥖 Food bought · +42 hunger');}],
+    ['👕 New outfit',90,()=>{S.inventory.push('Outfit');S.reputation=clamp(S.reputation+4);S.fun=clamp(S.fun+10);toast('👕 New outfit · reputation +4');}],
+    ['🎧 Headphones',120,()=>{S.inventory.push('Headphones');S.fun=clamp(S.fun+18);toast('🎧 Headphones added to inventory');}],
+    ['🚲 Bike',260,()=>{S.inventory.push('Bike');S.energy=clamp(S.energy+8);toast('🚲 Bike purchased · travel feels easier');}]
+  ].map(([n,c,fn])=>'<div class="card"><b>'+n+'</b><small>'+money(c)+'</small><button class="action primary wide" onclick="window.buyItem('+c+',\''+n.replace(/'/g,"\\'")+'\')">BUY</button></div>').join('')+'</div><button class="action wide" onclick="window.closeModal()">CLOSE</button>');
+}
+function buyItem(cost,label){
+  if(S.money<cost)return toast('Not enough money.');
+  const map={ '🥖 Food basket':()=>{S.foodBought=(S.foodBought||0)+1;S.hunger=clamp(S.hunger+42);},'👕 New outfit':()=>{S.inventory.push('Outfit');S.reputation=clamp(S.reputation+4);S.fun=clamp(S.fun+10);},'🎧 Headphones':()=>{S.inventory.push('Headphones');S.fun=clamp(S.fun+18);},'🚲 Bike':()=>{S.inventory.push('Bike');S.energy=clamp(S.energy+8);}};
+  S.money-=cost;(map[label]||(()=>{}))();save();ui();close();toast(label+' purchased · -'+money(cost));
+}
+function transport(){
+  const hasBike=S.inventory.includes('Bike');
+  modal('<h2>🚲 Transport</h2><p>Move around faster and choose how much energy or cash you want to spend.</p><div class="grid"><div class="card"><b>🚶 Walk</b><small>Free · slow · uses energy</small><button class="action primary wide" onclick="window.closeModal();toast(\'🚶 You are on foot.\')">WALK</button></div><div class="card"><b>🚇 Metro</b><small>€8 · quick · reliable</small><button class="action primary wide" onclick="window.takeMetro()">TAKE METRO</button></div><div class="card"><b>🚲 Bike</b><small>'+(hasBike?'Owned · free · efficient':'Locked · buy one in Shops')+'</small><button class="action '+(hasBike?'primary':'')+' wide" '+(hasBike?'onclick="window.rideBike()"':'disabled')+'>'+(hasBike?'RIDE BIKE':'LOCKED')+'</button></div></div><button class="action wide" onclick="window.closeModal()">CLOSE</button>');
+}
+function takeMetro(){if(S.money<8)return toast('You need €8 for the Metro.');S.money-=8;S.hour+=.5;S.energy=clamp(S.energy-2);save();ui();close();toast('🚇 Metro ride · -€8');}
+function rideBike(){S.hour+=.35;S.energy=clamp(S.energy-1);save();ui();close();toast('🚲 Bike ride · fast and cheap');}
+function riskAction(){
+  if(S.risk>65)return toast('🚨 Too much heat. Keep a low profile.');
+  const success=Math.random()>.35;
+  if(success){const gain=60+Math.floor(Math.random()*100);S.money+=gain;S.risk=clamp(S.risk+20);S.reputation=clamp(S.reputation-3);toast('⚠️ Risky hustle paid '+money(gain));}
+  else{const fine=45+Math.floor(Math.random()*75);S.money=Math.max(0,S.money-fine);S.risk=clamp(S.risk+28);S.mood=clamp(S.mood-10);toast('🚨 You got caught · -'+money(fine));}
+  save();ui();
+}
+function risk(){
+  modal('<h2>⚠️ Street Risk</h2><p>EURO LIFE now has optional risk/reward choices. Risk rises when you make shady decisions and falls when you keep a clean routine.</p><div class="card"><b>Current heat: '+Math.round(S.risk)+'/100</b><small>High heat hurts mood and can trigger setbacks.</small></div><button class="action primary wide" onclick="window.riskAction()">TAKE A RISK · CASH</button><button class="action wide" onclick="S.risk=clamp(S.risk-15);save();ui();window.closeModal();toast(\'🕊️ You kept a low profile.\')">KEEP A LOW PROFILE</button>');
+}
+function npcRoutine(dt){
+  if(mode!=='city')return;
+  npcs.forEach(n=>{
+    n.t+=dt*(.35+(n.name.length%3)*.08);
+    const phase=Math.floor((S.hour+n.name.length)%24);
+    let tx=n.x+Math.sin(n.t)*2.8,tz=n.z+Math.cos(n.t*.75)*2.8;
+    if(phase>=9&&phase<17){tx+=n.name==='Amélie'?-5:3;tz+=2;}
+    if(phase>=18&&phase<22){tx+=n.name==='Luca'?4:-2;tz-=4;}
+    n.g.position.x+=(tx-n.g.position.x)*Math.min(1,dt*1.4);
+    n.g.position.z+=(tz-n.g.position.z)*Math.min(1,dt*1.4);
+  });
+}
+const _phase4Loop=loop;
+loop=function(t){
+  const dt=Math.min(.05,(t-(loop.last||t))/1000);loop.last=t;
+  npcRoutine(dt);
+  _phase4Loop(t);
+};
+ensureMissions();
+window.missions=missions;window.claimMission=claimMission;window.shop=shop;window.buyItem=buyItem;window.transport=transport;window.takeMetro=takeMetro;window.rideBike=rideBike;window.risk=risk;window.riskAction=riskAction;
