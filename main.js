@@ -18,22 +18,20 @@ const save = () => localStorage.setItem('eurolife-life',JSON.stringify(S));
 const clock = () => String(Math.floor(S.hour)%24).padStart(2,'0')+':'+String(Math.floor((S.hour%1)*60)).padStart(2,'0');
 
 function ui(){
-  for(const k of ['hunger','energy','hygiene','fun','social']){
-    $(k).textContent=Math.round(S[k]); $(k+'Fill').style.width=clamp(S[k])+'%';
-  }
-  $('money').textContent=money(S.money)+' · '+clock();
-  $('day').textContent=S.day;
-  $('zone').textContent=state.zone;
-  $('place').textContent=state.place;
+  if($('money')) $('money').textContent=Math.round(S.money).toLocaleString();
+  if($('day')) $('day').textContent=S.day;
+  if($('clock')) $('clock').textContent=clock();
+  if($('zone')) $('zone').textContent=state.zone;
+  if($('place')) $('place').textContent=state.place;
 }
 function toast(t){
   $('toast').textContent=t; $('toast').classList.add('show');
   clearTimeout(window.__toast); window.__toast=setTimeout(()=>$('toast').classList.remove('show'),2200);
 }
-function modal(html){$('sheet').innerHTML=html;$('modal').classList.add('show')}
+function modal(html){if(!$('modal')) return; $('sheet').innerHTML=html;$('modal').classList.add('show')}
 function close(){ $('modal').classList.remove('show') }
 window.closeModal=close;
-$('modal').onclick=e=>{if(e.target.id==='modal')close()};
+if($('modal')) $('modal').onclick=e=>{if(e.target.id==='modal')close()};
 
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x9dbed0);
@@ -173,7 +171,7 @@ function interact(){
   const p=nearest();
   if(p)p.action();else toast('Walk closer to an entrance or person.');
 }
-$('hint').onclick=interact;
+$('prompt').onclick=interact;
 
 function advance(hours){
   if(hours<=0)return;
@@ -262,10 +260,8 @@ function phone(){
 function social(){modal('<h2>❤️ Social life</h2><p>Meet people physically in the city and build relationships.</p><div class="grid">'+Object.keys(S.friends).map(n=>'<div class="card"><b>'+n+'</b><small>'+Math.round(S.friends[n])+'% friendship</small><button class="action primary wide" onclick="window.hang(\\''+n+'\\')">HANG OUT</button></div>').join('')+'</div><button class="action wide" onclick="closeModal()">CLOSE</button>')}
 function map(){modal('<h2>🗺️ Europe</h2><div class="card"><b>🇫🇷 Paris · OPEN</b><small>Montmartre · cafés · metro · work</small></div><div class="card"><b>🇬🇧 London · LOCKED</b><small>120 career XP + €220 travel</small></div><div class="card"><b>🇩🇪 Berlin · LOCKED</b><small>210 career XP + €160 travel</small></div><div class="card"><b>🇮🇹 Rome · LOCKED</b><small>310 career XP + €150 travel</small></div><button class="action wide" onclick="closeModal()">RETURN</button>')}
 window.jobs=jobs;window.phone=phone;window.social=social;window.map=map;
-$('phone').onclick=phone;$('phoneFloat').onclick=phone;$('job').onclick=jobs;$('map').onclick=map;
-$('eat').onclick=()=>{if(state.mode==='home')eatHome();else cafe()};
-$('socialBtn').onclick=social;
-$('home').onclick=()=>state.mode==='home'?leaveApartment():enterApartment();
+$('phone').onclick=phone;
+$('work').onclick=jobs;
 
 const ray=new THREE.Raycaster(),mouse=new THREE.Vector2();
 renderer.domElement.addEventListener('dblclick',e=>{
@@ -289,7 +285,7 @@ function animate(t){
   }
   const lim=state.mode==='home'?10:42;player.position.x=clamp(player.position.x,-lim,lim);player.position.z=clamp(player.position.z,-lim,lim);
   near=nearest();
-  $('hint').classList.toggle('show',!!near);if(near)$('hint').textContent='E · '+near.name;
+  $('prompt').classList.toggle('show',!!near);if(near)$('prompt').textContent='E · '+near.name;
   for(const n of npcs){
     n.t+=dt*.55;
     if(state.mode==='city'){n.g.visible=true;const tx=n.x+Math.sin(n.t)*2.8,tz=n.z+Math.cos(n.t*.8)*2.4;n.g.position.x+=(tx-n.g.position.x)*dt;n.g.position.z+=(tz-n.g.position.z)*dt}else n.g.visible=false;
