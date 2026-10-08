@@ -381,3 +381,114 @@ loop=function(t){
 };
 ensureMissions();
 window.missions=missions;window.claimMission=claimMission;window.shop=shop;window.buyItem=buyItem;window.transport=transport;window.takeMetro=takeMetro;window.rideBike=rideBike;window.risk=risk;window.riskAction=riskAction;
+
+
+// ===== EURO LIFE PHASE 5: VEHICLES, POLICE, RELATIONSHIPS, PROPERTY, BUSINESS & STORY =====
+S.heat=Number(S.heat||0);S.vehicle=S.vehicle||null;S.business=S.business||null;S.businessLevel=Number(S.businessLevel||0);S.businessIncome=Number(S.businessIncome||0);
+S.relationships=S.relationships||{};S.nightlife=Number(S.nightlife||0);S.storyStep=Number(S.storyStep||0);
+const VEHICLES={
+ 'City Bike':{price:260,travel:.35,energy:1,heat:0,emoji:'🚲'},
+ 'Scooter':{price:1800,travel:.18,energy:1,heat:1,emoji:'🛵'},
+ 'Hatchback':{price:7500,travel:.12,energy:0,heat:0,emoji:'🚗'},
+ 'Luxury Sedan':{price:28000,travel:.08,energy:0,heat:0,emoji:'🚘'}
+};
+const BUSINESSES={
+ 'Street Food Stand':{price:4500,income:120,risk:4,desc:'A small food stand near the Metro.'},
+ 'Café':{price:18000,income:420,risk:2,desc:'Your own neighbourhood café.'},
+ 'Delivery Company':{price:42000,income:900,risk:3,desc:'Hire riders and build a local delivery network.'},
+ 'Tech Startup':{price:85000,income:1800,risk:6,desc:'Build a technology company and scale across Europe.'}
+};
+const STORY=[
+ {t:'A New Beginning',d:'Meet Amélie near the café and introduce yourself.',need:0,reward:100,fn:()=>S.friends.Amélie=clamp((S.friends.Amélie||0)+20)},
+ {t:'First Connection',d:'Spend time with Amélie or Luca.',need:1,reward:160,fn:()=>S.reputation=clamp(S.reputation+8)},
+ {t:'Make Your Move',d:'Reach €2,000 in savings.',need:2000,reward:350,fn:()=>S.reputation=clamp(S.reputation+12)},
+ {t:'Your Own Thing',d:'Buy your first business.',need:1,reward:700,fn:()=>S.reputation=clamp(S.reputation+15)},
+ {t:'Across Europe',d:'Travel to a second city.',need:2,reward:1200,fn:()=>S.reputation=clamp(S.reputation+20)}
+];
+function storyValue(i){
+ if(i===0)return (S.friends.Amélie||0)>=20?1:0;
+ if(i===1)return Math.max((S.friends.Amélie||0),(S.friends.Luca||0))>=35?1:0;
+ if(i===2)return S.money>=2000?1:0;
+ if(i===3)return S.business?1:0;
+ if(i===4)return S.unlockedCities.length>=2?1:0;
+ return 0;
+}
+function story(){
+ const i=Math.min(S.storyStep,STORY.length-1),q=STORY[i],v=storyValue(i);
+ modal('<h2>📖 Story mode</h2><p>Follow a life story through work, relationships, money and ambition.</p><div class="card"><b>Chapter '+(i+1)+' · '+q.t+'</b><small>'+q.d+'</small><small>Progress: '+v+'/1</small></div><button class="action '+(v?'primary':'')+' wide" '+(v?'onclick="window.completeStory()"':'disabled')+'>'+(v?'COMPLETE CHAPTER':'KEEP PLAYING')+'</button><button class="action wide" onclick="window.closeModal()">CLOSE</button>');
+}
+function completeStory(){
+ const q=STORY[S.storyStep];if(!q||!storyValue(S.storyStep))return;
+ q.fn();S.money+=q.reward;S.storyStep++;awardXP(15);save();ui();close();toast('📖 Chapter complete · +'+money(q.reward)+' · +15 XP');
+}
+function vehicles(){
+ const cards=Object.entries(VEHICLES).map(([n,v])=>{
+  const owned=S.vehicle===n,can=S.money>=v.price;
+  return '<div class="card"><b>'+v.emoji+' '+n+(owned?' · OWNED':'')+'</b><small>'+money(v.price)+' · Travel '+v.travel+'h · '+(v.energy?'energy -'+v.energy:'comfortable')+'</small><button class="action '+(!owned&&can?'primary':'')+' wide" '+(!owned&&can?'onclick="window.buyVehicle(\''+n+'\')"':'disabled')+'>'+(owned?'YOUR VEHICLE':can?'BUY':'NEED '+money(v.price))+'</button></div>';
+ }).join('');
+ modal('<h2>🚗 Vehicles</h2><p>Buy a vehicle to move around the city faster. Higher-end vehicles are expensive but make long days easier.</p><div class="grid">'+cards+'</div><button class="action wide" onclick="window.closeModal()">CLOSE</button>');
+}
+function buyVehicle(n){const v=VEHICLES[n];if(!v||S.money<v.price)return toast('Not enough money.');S.money-=v.price;S.vehicle=n;save();ui();close();toast(v.emoji+' '+n+' purchased!');}
+function drive(){
+ if(!S.vehicle)return toast('Buy a vehicle first.');
+ const v=VEHICLES[S.vehicle];
+ if(S.energy<v.energy)return toast('Too tired to drive.');
+ S.hour+=v.travel;S.energy=clamp(S.energy-v.energy);S.heat=clamp(S.heat+v.heat);save();ui();toast(v.emoji+' You drove across the city.');
+}
+function police(){
+ if(S.heat<8)return toast('👮 No police attention. Keep your day clean.');
+ if(S.heat<35){S.heat=clamp(S.heat-10);toast('👮 You kept a low profile. Heat cooling down.');return;}
+ const caught=Math.random()<S.heat/140;
+ if(caught){const fine=Math.round(80+S.heat*5);S.money=Math.max(0,S.money-fine);S.mood=clamp(S.mood-12);S.heat=clamp(S.heat-35);toast('🚨 Police stopped you · fine '+money(fine));}
+ else{S.heat=clamp(S.heat-8);toast('🚓 You avoided trouble · heat -8');}
+ save();ui();
+}
+function relationship(n){
+ const f=S.friends[n]||0;
+ const stage=f>=75?'Dating':f>=45?'Close':f>=20?'Friend':'Acquaintance';
+ modal('<h2>❤️ '+n+'</h2><p>Relationship: <b>'+stage+'</b> · '+Math.round(f)+'%</p><div class="card"><b>Spend the evening together</b><small>1 hour · costs €25 · increases friendship and mood.</small><button class="action primary wide" onclick="window.datePerson(\''+n+'\')">SPEND TIME</button></div><button class="action wide" onclick="window.closeModal()">CLOSE</button>');
+}
+function datePerson(n){if(S.money<25)return toast('You need €25 for the evening.');if(S.energy<5)return toast('You are too tired.');S.money-=25;S.energy=clamp(S.energy-5);S.fun=clamp(S.fun+22);S.social=clamp(S.social+20);S.friends[n]=clamp((S.friends[n]||0)+15);S.relationships[n]=S.friends[n]>=75?'dating':S.friends[n]>=45?'close':'friend';S.hour+=1;save();ui();close();toast('❤️ Evening with '+n+' · relationship +15');}
+function business(){
+ const cards=Object.entries(BUSINESSES).map(([n,b])=>{
+  const owned=S.business===n;
+  return '<div class="card"><b>🏢 '+n+(owned?' · OWNED':'')+'</b><small>'+b.desc+'</small><small>Buy '+money(b.price)+' · Daily income '+money(b.income)+'</small><button class="action '+(!owned&&S.money>=b.price?'primary':'')+' wide" '+(!owned&&S.money>=b.price?'onclick="window.buyBusiness(\''+n+'\')"':'disabled')+'>'+(owned?'MANAGE BUSINESS':S.money>=b.price?'BUY BUSINESS':'LOCKED')+'</button></div>';
+ }).join('');
+ modal('<h2>🏢 Businesses</h2><p>Turn your savings into recurring income. Higher businesses cost more but scale your life faster.</p><div class="grid">'+cards+'</div><button class="action wide" onclick="window.closeModal()">CLOSE</button>');
+}
+function buyBusiness(n){const b=BUSINESSES[n];if(!b||S.money<b.price)return toast('Not enough capital.');S.money-=b.price;S.business=n;S.businessIncome=b.income;S.businessLevel=1;S.reputation=clamp(S.reputation+10);save();ui();close();toast('🏢 You now own '+n+'!');}
+function nightlife(){
+ if(S.hour<18||S.hour>23)return toast('🌙 Nightlife starts after 18:00.');
+ const cost=45;if(S.money<cost)return toast('You need €45 for tonight.');
+ S.money-=cost;S.hour+=2;S.fun=clamp(S.fun+35);S.social=clamp(S.social+22);S.nightlife++;S.heat=clamp(S.heat+Math.random()*5);save();ui();toast('🌃 Great night out · fun +35');
+}
+function dailyBusinessIncome(){
+ if(!S.business||!S.businessIncome)return;
+ const b=BUSINESSES[S.business];const income=Math.round(S.businessIncome*(1+(S.businessLevel-1)*.15));
+ S.money+=income;S.totalEarned+=income;toast('🏢 '+S.business+' earned '+money(income));
+ if(Math.random()<.12)S.businessLevel++;
+}
+const _finish5=finishDay;
+finishDay=function(){
+ dailyBusinessIncome();
+ S.heat=clamp(S.heat-12);
+ _finish5();
+};
+function richPhone(){
+ modal('<h2>📱 Life Hub</h2><p>'+S.city+' · Day '+S.day+' · '+clock()+' · '+money(S.money)+'</p><div class="grid">
+ <div class="card" onclick="jobApp()"><b>💼 Career</b><small>'+S.job+' · Level '+jobLevel()+'</small></div>
+ <div class="card" onclick="story()"><b>📖 Story</b><small>Chapter '+Math.min(S.storyStep+1,STORY.length)+'/'+STORY.length+'</small></div>
+ <div class="card" onclick="vehicles()"><b>🚗 Vehicles</b><small>'+(S.vehicle||'No vehicle')+'</small></div>
+ <div class="card" onclick="business()"><b>🏢 Business</b><small>'+(S.business||'Build your first company')+'</small></div>
+ <div class="card" onclick="social()"><b>❤️ Relationships</b><small>Build friendships and romance.</small></div>
+ <div class="card" onclick="map()"><b>🗺️ Europe</b><small>'+S.unlockedCities.length+' cities unlocked</small></div>
+ <div class="card" onclick="housing()"><b>🏠 Property</b><small>'+S.home+'</small></div>
+ <div class="card" onclick="nightlife()"><b>🌃 Nightlife</b><small>Clubs, cafés and late nights.</small></div>
+ <div class="card" onclick="police()"><b>👮 Police</b><small>Heat '+Math.round(S.heat)+'/100</small></div>
+ </div><button class="action wide" onclick="window.closeModal()">CLOSE PHONE</button>');
+}
+function social5(){
+ modal('<h2>❤️ Relationships</h2><p>Friendships can grow into close relationships and dating.</p><div class="grid">'+Object.keys(S.friends).map(n=>'<div class="card"><b>'+n+'</b><small>'+Math.round(S.friends[n]||0)+'% · '+(S.relationships[n]||'acquaintance')+'</small><button class="action primary wide" onclick="window.relationship(\''+n+'\')">INTERACT</button></div>').join('')+'</div><button class="action wide" onclick="window.closeModal()">CLOSE</button>');
+}
+window.story=story;window.completeStory=completeStory;window.vehicles=vehicles;window.buyVehicle=buyVehicle;window.drive=drive;window.police=police;window.relationship=relationship;window.datePerson=datePerson;window.business=business;window.buyBusiness=buyBusiness;window.nightlife=nightlife;
+window.phone=richPhone;window.social=social5;
