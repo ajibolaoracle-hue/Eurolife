@@ -147,4 +147,100 @@ const keys={},joy={x:0,y:0,on:false};addEventListener('keydown',e=>{keys[e.key.t
 const pad=$('joystick'),knob=$('knob');function jm(e){let r=pad.getBoundingClientRect(),dx=e.clientX-(r.left+r.width/2),dy=e.clientY-(r.top+r.height/2),l=Math.hypot(dx,dy),m=42;if(l>m){dx=dx/l*m;dy=dy/l*m}joy.x=dx/m;joy.y=dy/m;knob.style.transform='translate('+dx+'px,'+dy+'px)'}pad.onpointerdown=e=>{joy.on=true;pad.setPointerCapture(e.pointerId);jm(e)};pad.onpointermove=e=>joy.on&&jm(e);pad.onpointerup=()=>{joy.on=false;joy.x=joy.y=0;knob.style.transform='translate(0,0)'};
 function interact(){let list=mode==='home'?pointsHome:points;near=list.reduce((a,p)=>{let d=Math.hypot(player.position.x-p.x,player.position.z-p.z);return d<a.d?{p,d}:a},{p:null,d:99});if(near.d<interactRadius)near.p.fn();else toast('Walk closer to something interesting.')}
 function loop(t){let dt=Math.min(.04,(t-(loop.last||t))/1000);loop.last=t;let mx=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0)+joy.x,mz=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0)+joy.y,l=Math.hypot(mx,mz);if(l>1){mx/=l;mz/=l}if(l>.05){player.position.x+=mx*5*dt;player.position.z+=mz*5*dt;advance(dt*.15)}player.position.x=clamp(player.position.x,-39,39);player.position.z=clamp(player.position.z,-39,39);near=null;let list=mode==='home'?pointsHome:points,best=3;list.forEach(p=>{let d=Math.hypot(player.position.x-p.x,player.position.z-p.z);if(d<best){best=d;near=p}});$('hint').classList.toggle('show',!!near);if(near)$('hint').textContent='E · '+near.name;npcs.forEach(n=>{if(mode==='city'){n.t+=dt*.7;n.g.position.x=n.x+Math.sin(n.t)*2.4;n.g.position.z=n.z+Math.cos(n.t*.8)*2.1}else n.g.visible=false});if(mode==='city')npcs.forEach(n=>n.g.visible=true);let target=new THREE.Vector3(player.position.x,0,player.position.z);camera.position.lerp(new THREE.Vector3(target.x+20,25,target.z+20),.08);camera.lookAt(target);renderer.render(scene,camera);requestAnimationFrame(loop)}
-ui();if(!localStorage.getItem('eurolife-life-seen')){localStorage.setItem('eurolife-life-seen','1');setTimeout(creator,500)}requestAnimationFrame(loop);addEventListener('resize',()=>{let a=innerWidth/innerHeight,c=10*a;camera.left=-c;camera.right=c;camera.top=10;camera.bottom=-10;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+
+// ===== EURO LIFE PHASE 2: PROGRESSION, HOUSING, CITIES, CONSEQUENCES & SAVE =====
+const CITY_DATA={
+  Paris:{flag:'🇫🇷',cost:0,req:0,wage:1.0,rent:245,desc:'Your starting city. Cafés, service work and the Montmartre district.'},
+  London:{flag:'🇬🇧',cost:220,req:120,wage:1.65,rent:520,desc:'Higher wages and rent. Unlock professional opportunities.'},
+  Amsterdam:{flag:'🇳🇱',cost:180,req:170,wage:1.45,rent:430,desc:'Bikes, canals and a growing tech economy.'},
+  Berlin:{flag:'🇩🇪',cost:160,req:210,wage:1.35,rent:360,desc:'Affordable compared with London, with a strong startup scene.'},
+  Madrid:{flag:'🇪🇸',cost:140,req:260,wage:1.22,rent:300,desc:'Culture, nightlife and tourism jobs.'},
+  Rome:{flag:'🇮🇹',cost:150,req:310,wage:1.18,rent:325,desc:'Tourism, hospitality and a slower Mediterranean rhythm.'}
+};
+const HOMES={
+  'Montmartre Room':{rent:90,comfort:0,energy:0,desc:'A basic room. Cheap, but noisy and cramped.'},
+  'Montmartre Apartment':{rent:245,comfort:10,energy:8,desc:'Your current starter apartment.'},
+  'Paris Studio':{rent:390,comfort:18,energy:14,desc:'A private studio with better rest and comfort.'},
+  'Paris Apartment':{rent:650,comfort:28,energy:20,desc:'A serious upgrade. Expensive, but life gets easier.'}
+};
+S.city=S.city||'Paris';S.home=S.home||'Montmartre Apartment';S.rentDay=Number(S.rentDay||0);S.totalEarned=Number(S.totalEarned||0);S.totalWorked=Number(S.totalWorked||0);S.unlockedCities=Array.isArray(S.unlockedCities)?S.unlockedCities:['Paris'];S.daysSurvived=Number(S.daysSurvived||S.day||1);
+function city(){mode='city';scene.children.filter(o=>o.userData.home).forEach(o=>scene.remove(o));player.position.set(0,0,0);$('zone').textContent=S.city.toUpperCase();$('place').textContent=(CITY_DATA[S.city]||CITY_DATA.Paris).desc;toast(CITY_DATA[S.city].flag+' '+S.city+' · life continues');}
+function housing(){
+  const cards=Object.entries(HOMES).map(([name,h])=>{
+    const current=S.home===name, affordable=S.money>=Math.max(0,h.rent-S.rentForCurrent());
+    return '<div class="card"><b>🏠 '+name+(current?' · CURRENT':'')+'</b><small>'+h.desc+'</small><small>Weekly rent · '+money(h.rent)+' · Comfort +'+h.comfort+' · Rest +'+h.energy+'</small><button class="action '+(!current?'primary':'')+' wide" '+(current?'disabled':'onclick="window.chooseHome(\''+name.replace(/'/g,"\\'")+'\')"')+'>'+ (current?'YOUR HOME':'MOVE HERE')+'</button></div>';
+  }).join('');
+  modal('<h2>🏠 Housing</h2><p>Better homes improve recovery, but increase your weekly rent. Current: <b>'+S.home+'</b>.</p><div class="grid">'+cards+'</div><button class="action wide" onclick="window.closeModal()">CLOSE</button>');
+}
+S.rentForCurrent=function(){return (HOMES[S.home]||HOMES['Montmartre Apartment']).rent};
+function chooseHome(name){const h=HOMES[name];if(!h)return;if(S.money<Math.min(100,h.rent*.25))return toast('You need enough cash for the move-in cost.');S.home=name;S.dailyCost=Math.max(25,35+(h.rent-245)*.08);S.money-=Math.min(100,h.rent*.25);save();ui();close();toast('🏠 Moved into '+name+' · weekly rent '+money(h.rent));}
+function travel(cityName){
+  const c=CITY_DATA[cityName];if(!c)return;
+  if(cityName===S.city)return toast('You are already in '+cityName+'.');
+  if(!S.unlockedCities.includes(cityName))return toast('🔒 Requires '+c.req+' career XP.');
+  if(S.money<c.cost)return toast('You need '+money(c.cost)+' for this journey.');
+  S.money-=c.cost;S.city=cityName;S.dailyCost=Math.round(35*(c.wage?1:1));S.workedToday=0;S.hour=8;S.day++;save();ui();close();city();toast(c.flag+' Arrived in '+cityName+' · Day '+S.day);
+}
+function map(){
+  const cards=Object.entries(CITY_DATA).map(([name,c])=>{
+    const open=S.unlockedCities.includes(name), here=S.city===name;
+    return '<div class="card"><b>'+c.flag+' '+name+(here?' · HERE':'')+'</b><small>'+c.desc+'</small><small>'+(open?'✅ Unlocked':'🔒 Requires '+c.req+' XP')+(c.cost?' · Travel '+money(c.cost):'')+'</small><button class="action '+(open&&!here?'primary':'')+' wide" '+(open&&!here?'onclick="window.travelTo(\''+name+'\')"':'disabled')+'>'+ (here?'CURRENT CITY':open?'TRAVEL':'LOCKED') +'</button></div>';
+  }).join('');
+  modal('<h2>🗺️ Europe</h2><p>Build career XP to unlock new cities. Every move changes the opportunities and cost of living.</p><div class="grid">'+cards+'</div><button class="action wide" onclick="window.closeModal()">CLOSE MAP</button>');
+}
+function progressUnlocks(){
+  Object.entries(CITY_DATA).forEach(([name,c])=>{if(!S.unlockedCities.includes(name)&&S.xp>=c.req){S.unlockedCities.push(name);toast('🗺️ New city unlocked: '+c.flag+' '+name);}});
+}
+function consequences(){
+  let hit=false;
+  if(S.hunger<20){S.energy=clamp(S.energy-8);S.mood=clamp(S.mood-8);hit=true;}
+  if(S.energy<15){S.mood=clamp(S.mood-10);hit=true;}
+  if(S.hygiene<15){S.social=clamp(S.social-8);S.mood=clamp(S.mood-6);hit=true;}
+  if(S.money<=0){S.mood=clamp(S.mood-5);hit=true;}
+  if(hit)toast('⚠️ Your choices are catching up with you. Eat, rest or earn before things get worse.');
+}
+function finishDay(){
+  dailyBills();
+  const h=HOMES[S.home]||HOMES['Montmartre Apartment'];
+  const weekly=(S.day%7===0);
+  if(weekly){const rent=h.rent;if(S.money>=rent){S.money-=rent;toast('🏠 Weekly rent paid · -'+money(rent));}else{S.mood=clamp(S.mood-15);toast('🚨 Rent missed · '+money(rent)+' due');}}
+  consequences();progressUnlocks();
+  S.workedToday=0;S.daysSurvived++;S.day++;S.hour=8;
+  S.energy=clamp(100+(h.energy||0));S.hunger=clamp(S.hunger-12);S.hygiene=clamp(S.hygiene-10);S.fun=clamp(S.fun+12);S.social=clamp(S.social+5);
+  save();ui();
+  modal('<h2>🌙 Day complete</h2><p>Day '+(S.day-1)+' is over. You earned '+money(S.totalEarned)+' total across '+S.totalWorked+' work hours.</p><div class="card"><b>Wallet</b><small>'+money(S.money)+' · Career XP '+S.xp+' · Level '+jobLevel()+'</small></div><div class="card"><b>Life</b><small>'+S.home+' · '+S.city+' · '+S.job+'</small></div><button class="action primary wide" onclick="window.closeModal()">START DAY '+S.day+'</button>');
+}
+function advance(h){
+  if(h<=0)return;const prev=S.hour;S.hour+=h;
+  S.hunger=clamp(S.hunger-h*1.8);S.energy=clamp(S.energy-h*1.15);S.hygiene=clamp(S.hygiene-h*.9);S.fun=clamp(S.fun-h*.45);S.social=clamp(S.social-h*.3);
+  if(S.hour>=24){S.hour=24;save();ui();finishDay();return;}save();ui();
+}
+function work(jobName=S.job){
+  const j=JOBS[jobName];if(!j)return;
+  if(S.xp<j.req)return toast('You need '+j.req+' career XP for this job.');
+  if(S.energy<j.energy)return toast('Not enough energy for this shift.');
+  if(S.workedToday>=10)return toast('You have worked 10 hours today. Rest before another shift.');
+  if(S.hour+j.hours>=24)return toast('That shift runs past midnight. Sleep or choose a shorter shift.');
+  S.job=jobName;const c=CITY_DATA[S.city]||CITY_DATA.Paris;
+  const pay=Math.round((j.min+Math.random()*(j.max-j.min))*c.wage*(S.workedToday>=7?1.15:1));
+  S.money+=pay;S.totalEarned+=pay;S.workedToday+=j.hours;S.totalWorked+=j.hours;
+  S.energy=clamp(S.energy-j.energy);S.hunger=clamp(S.hunger-j.hunger);S.hygiene=clamp(S.hygiene-j.hygiene);S.fun=clamp(S.fun-j.fun);S.mood=clamp(S.mood+(S.energy>35?3:-5));S.hour+=j.hours;
+  awardXP(j.xp);progressUnlocks();consequences();save();ui();toast(j.emoji+' Shift complete · +'+money(pay)+' · '+clock());
+}
+function sleep(){
+  if(S.hour>=24){finishDay();return;}
+  const remaining=Math.max(1,24-S.hour);S.hour=24;advance(0);finishDay();
+}
+function social(){
+  modal('<h2>❤️ Social life</h2><p>Relationships now affect your mood and social stat. Stronger friendships unlock better events later.</p><div class="grid">'+Object.entries(S.friends).map(([n,v])=>'<div class="card"><b>'+n+'</b><small>Friendship '+Math.round(v)+'%</small><button class="action primary wide" onclick="window.hangout(\''+n+'\')">MEET · 1 HOUR</button></div>').join('')+'</div><button class="action wide" onclick="window.closeModal()">CLOSE</button>');
+}
+function hangout(n){if(S.energy<4)return toast('You are too tired to socialise.');S.social=clamp(S.social+16);S.fun=clamp(S.fun+9);S.energy=clamp(S.energy-4);S.hour+=1;S.friends[n]=clamp((S.friends[n]||0)+12);save();ui();close();toast(n+' liked spending time with you ❤️');}
+function saveGame(){save();toast('💾 Game saved on this device.');}
+function resetGame(){if(confirm('Start a new EURO LIFE? Your current save will be erased.')){localStorage.removeItem('eurolife-life');location.reload();}}
+function phone(){
+  modal('<h2>📱 Your phone</h2><p>'+S.city+' · Day '+S.day+' · '+clock()+' · Wallet '+money(S.money)+'</p><div class="grid"><div class="card" onclick="jobApp()"><b>💼 Jobs</b><small>'+S.job+' · Level '+jobLevel()+'</small></div><div class="card" onclick="map()"><b>🗺️ Europe</b><small>'+S.unlockedCities.length+' cities unlocked</small></div><div class="card" onclick="housing()"><b>🏠 Housing</b><small>'+S.home+' · Weekly rent '+money((HOMES[S.home]||HOMES['Montmartre Apartment']).rent)+'</small></div><div class="card"><b>🏦 Bank</b><small>Balance '+money(S.money)+' · Earned '+money(S.totalEarned)+'</small></div><div class="card" onclick="saveGame()"><b>💾 Save</b><small>Autosave is active. Save manually too.</small></div><div class="card" onclick="resetGame()"><b>↻ New Life</b><small>Reset this device and start again.</small></div></div><button class="action wide" onclick="window.closeModal()">CLOSE PHONE</button>');
+}
+window.travelTo=travel;window.chooseHome=chooseHome;window.hangout=hangout;window.saveGame=saveGame;window.resetGame=resetGame;window.housing=housing;window.map=map;
+$('home').onclick=()=>mode==='home'?city():home();$('phone').onclick=phone;$('phoneFloat').onclick=phone;$('map').onclick=map;$('job').onclick=jobApp;$('eat').onclick=eat;$('socialBtn').onclick=social;
+
+ui();progressUnlocks();if(!localStorage.getItem('eurolife-life-seen')){localStorage.setItem('eurolife-life-seen','1');setTimeout(creator,500)}requestAnimationFrame(loop);addEventListener('resize',()=>{let a=innerWidth/innerHeight,c=10*a;camera.left=-c;camera.right=c;camera.top=10;camera.bottom=-10;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
