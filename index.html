@@ -10,6 +10,45 @@
 <div id="prompt" class="prompt">E · INTERACT</div><div class="help">Use joystick or WASD to walk · Walk to café / NPCs to interact</div>
 <div class="actions"><button class="btn" id="phone">📱</button><button class="btn" id="work">💼</button></div>
 <div class="controls" id="joy"><div class="base"></div><div class="stick" id="stick"></div></div></div>
+<div id="creator" style="position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;padding:18px;background:linear-gradient(145deg,#101923f2,#172b3bf0);font-family:system-ui,sans-serif">
+  <div style="width:min(100%,520px);max-height:92vh;overflow:auto;border:1px solid #ffffff2a;border-radius:24px;background:#182631f5;padding:22px;box-shadow:0 24px 80px #0009">
+    <div style="font-size:11px;font-weight:900;letter-spacing:.22em;color:#8fc5e0">EURO LIFE · PARIS</div>
+    <h1 style="font-size:30px;line-height:1.05;margin:8px 0">Create your character</h1>
+    <p style="margin:0 0 18px;color:#b8c7d1;font-size:14px">Choose your look before entering the city.</p>
+    <div style="display:flex;gap:12px;align-items:center;background:#0e1822;border-radius:18px;padding:16px;margin-bottom:18px">
+      <div id="avatarPreview" style="width:94px;height:112px;flex:none;position:relative;display:flex;align-items:center;justify-content:center">
+        <div id="previewHead" style="position:absolute;top:10px;width:38px;height:38px;border-radius:50%;background:#b97b59;border:3px solid #1b2631"></div>
+        <div id="previewBody" style="position:absolute;top:47px;width:42px;height:52px;border-radius:12px 12px 5px 5px;background:#3c668f"></div>
+        <div id="previewHair" style="position:absolute;top:7px;width:40px;height:18px;border-radius:20px 20px 5px 5px;background:#2b211e"></div>
+      </div>
+      <div><div id="previewName" style="font-size:20px;font-weight:900">Alex</div><div style="font-size:12px;color:#aebfcb">Your life in Europe starts here.</div></div>
+    </div>
+    <label style="display:block;font-size:12px;color:#c8d5de;font-weight:800;margin-bottom:6px">CHARACTER NAME</label>
+    <input id="characterName" maxlength="18" value="Alex" placeholder="Enter name" style="width:100%;padding:13px;border:1px solid #ffffff28;border-radius:12px;background:#0e1822;color:white;font:inherit;margin-bottom:16px">
+    <div style="font-size:12px;color:#c8d5de;font-weight:800;margin-bottom:8px">SKIN TONE</div>
+    <div id="skinChoices" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      <button data-skin="#f0c6a2" aria-label="Skin tone 1" style="width:42px;height:42px;border-radius:50%;background:#f0c6a2;border:3px solid white"></button>
+      <button data-skin="#c98f68" aria-label="Skin tone 2" style="width:42px;height:42px;border-radius:50%;background:#c98f68;border:3px solid transparent"></button>
+      <button data-skin="#8b563b" aria-label="Skin tone 3" style="width:42px;height:42px;border-radius:50%;background:#8b563b;border:3px solid transparent"></button>
+      <button data-skin="#593523" aria-label="Skin tone 4" style="width:42px;height:42px;border-radius:50%;background:#593523;border:3px solid transparent"></button>
+    </div>
+    <div style="font-size:12px;color:#c8d5de;font-weight:800;margin-bottom:8px">OUTFIT</div>
+    <div id="outfitChoices" style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:16px">
+      <button data-outfit="#3c668f" style="padding:10px 13px;border-radius:10px;border:2px solid white;background:#3c668f;color:white;font-weight:800">City blue</button>
+      <button data-outfit="#a34f69" style="padding:10px 13px;border-radius:10px;border:2px solid transparent;background:#a34f69;color:white;font-weight:800">Street rose</button>
+      <button data-outfit="#46765d" style="padding:10px 13px;border-radius:10px;border:2px solid transparent;background:#46765d;color:white;font-weight:800">Forest green</button>
+      <button data-outfit="#c0923d" style="padding:10px 13px;border-radius:10px;border:2px solid transparent;background:#c0923d;color:white;font-weight:800">Golden hour</button>
+    </div>
+    <div style="font-size:12px;color:#c8d5de;font-weight:800;margin-bottom:8px">HAIRSTYLE</div>
+    <div id="hairChoices" style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:20px">
+      <button data-hair="#2b211e" style="padding:10px 13px;border-radius:10px;border:2px solid white;background:#2b211e;color:white;font-weight:800">Dark</button>
+      <button data-hair="#6c4630" style="padding:10px 13px;border-radius:10px;border:2px solid transparent;background:#6c4630;color:white;font-weight:800">Brown</button>
+      <button data-hair="#c5a15b" style="padding:10px 13px;border-radius:10px;border:2px solid transparent;background:#c5a15b;color:#17212b;font-weight:800">Blonde</button>
+    </div>
+    <button id="enterCity" style="width:100%;padding:15px;border:0;border-radius:13px;background:#e9bd65;color:#182631;font-size:15px;font-weight:950;letter-spacing:.04em">ENTER PARIS →</button>
+    <div style="text-align:center;font-size:11px;color:#8fa1ad;margin-top:10px">Your character choices are saved on this device.</div>
+  </div>
+</div>
 <script>
 (()=>{const c=document.getElementById('fallback'),ctx=c.getContext('2d');let x=0,y=0,keys={},joy={x:0,y:0},last=performance.now(),t=0;
 function resize(){c.width=innerWidth*devicePixelRatio;c.height=innerHeight*devicePixelRatio;ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0)}addEventListener('resize',resize);resize();
@@ -28,4 +67,34 @@ person(0,0,'#3c668f',1.35);ctx.restore();requestAnimationFrame(draw)}requestAnim
 document.getElementById('phone').onclick=()=>alert('Life Hub · Paris\\n€1,200 · Day 1\\nWalk around to explore the city.');document.getElementById('work').onclick=()=>alert('Jobs\\nCafé Barista · €95–€145\\nWalk to the café to start your shift.');
 })();
 </script>
-<script type="module" src="/main.js"></script></body></html>
+<script>
+(()=> {
+ const defaults={name:'Alex',skin:'#c98f68',outfit:'#3c668f',hair:'#2b211e'};
+ let choice={...defaults};
+ try{choice={...defaults,...JSON.parse(localStorage.getItem('eurolife-character')||'{}')}}catch(e){}
+ const $=id=>document.getElementById(id);
+ const paint=()=>{
+  $('previewName').textContent=choice.name||'Alex';
+  $('previewHead').style.background=choice.skin;
+  $('previewBody').style.background=choice.outfit;
+  $('previewHair').style.background=choice.hair;
+  document.querySelectorAll('[data-skin]').forEach(b=>b.style.borderColor=b.dataset.skin===choice.skin?'white':'transparent');
+  document.querySelectorAll('[data-outfit]').forEach(b=>b.style.borderColor=b.dataset.outfit===choice.outfit?'white':'transparent');
+  document.querySelectorAll('[data-hair]').forEach(b=>b.style.borderColor=b.dataset.hair===choice.hair?'white':'transparent');
+ };
+ $('characterName').value=choice.name;
+ $('characterName').addEventListener('input',e=>{choice.name=e.target.value.slice(0,18)||'Alex';paint()});
+ document.querySelectorAll('[data-skin]').forEach(b=>b.onclick=()=>{choice.skin=b.dataset.skin;paint()});
+ document.querySelectorAll('[data-outfit]').forEach(b=>b.onclick=()=>{choice.outfit=b.dataset.outfit;paint()});
+ document.querySelectorAll('[data-hair]').forEach(b=>b.onclick=()=>{choice.hair=b.dataset.hair;paint()});
+ $('enterCity').onclick=()=>{
+  choice.name=choice.name.trim()||'Alex';
+  localStorage.setItem('eurolife-character',JSON.stringify(choice));
+  $('creator').style.display='none';
+  if(window.applyCharacterSelection)window.applyCharacterSelection();
+ };
+ paint();
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r160/three.min.js"></script>
+<script src="/main.js"></script></body></html>
