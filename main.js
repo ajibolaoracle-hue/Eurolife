@@ -94,6 +94,21 @@ function building(x,z,w,d,h,mat,name){
   label(name.toUpperCase(),x,z-d/2-.25);
 }
 
+// Immediate visible starter scene: ensures the first frame is a world, not an empty sky.
+const emergencyGround = new THREE.Mesh(new THREE.PlaneGeometry(180,180), MAT(0x6f8d68));
+emergencyGround.rotation.x=-Math.PI/2; emergencyGround.position.y=-0.3; emergencyGround.receiveShadow=true; scene.add(emergencyGround);
+for(let i=0;i<7;i++){
+  const bx=-24+i*8, bh=5+(i%3)*2;
+  const b=new THREE.Mesh(new THREE.BoxGeometry(5,bh,5),MAT([0xd7c1a7,0xb97e69,0xd5d0c4][i%3]));
+  b.position.set(bx,bh/2,-25);b.castShadow=true;b.receiveShadow=true;scene.add(b);
+  for(let wy=1.6;wy<bh-0.5;wy+=1.7) for(let wx=-1.5;wx<=1.5;wx+=2)
+    box(.65,.7,.06,MAT(0x345a72),bx+wx,wy,-22.46);
+}
+box(70,.08,7,MAT(0x343941),0,-.16,0);
+const starterAvatar=new THREE.Group();starterAvatar.position.set(0,0,4);scene.add(starterAvatar);
+cyl(.34,.95,MAT(0x3c668f),0,.8,0,starterAvatar);
+const starterHead=new THREE.Mesh(new THREE.SphereGeometry(.27,12,8),MAT(0xb97b59));starterHead.position.y=1.5;starterAvatar.add(starterHead);
+
 const world=[];
 function point(name,x,z,action,range=2.8){world.push({name,x,z,action,range})}
 
