@@ -1,4 +1,4 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
+import * as THREE from 'https://unpkg.com/three@0.180.0/build/three.module.js';
 
 const $ = id => document.getElementById(id);
 const clamp = (n,a=0,b=100) => Math.max(a,Math.min(b,n));
@@ -38,8 +38,8 @@ scene.background=new THREE.Color(0x9dbed0);
 scene.fog=new THREE.Fog(0x9dbed0,55,125);
 const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,.1,180);
 camera.position.set(10,9,12);
-const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
-renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));
+const renderer=new THREE.WebGLRenderer({antialias:false,alpha:false,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.25));
 renderer.setSize(innerWidth,innerHeight);
 renderer.shadowMap.enabled=true;
 renderer.shadowMap.type=THREE.PCFSoftShadowMap;
@@ -353,4 +353,7 @@ function animate(t){
   ui();renderer.render(scene,camera);requestAnimationFrame(animate);
 }
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
-ui();requestAnimationFrame(animate);
+ui();
+window.addEventListener('error',e=>{const el=document.createElement('div');el.style='position:fixed;inset:90px 12px auto;background:#401b20;color:white;padding:14px;border-radius:12px;z-index:99999;font:14px system-ui';el.textContent='EURO LIFE could not start: '+(e.message||'rendering error');document.body.appendChild(el)});
+window.addEventListener('unhandledrejection',e=>{const el=document.createElement('div');el.style='position:fixed;inset:90px 12px auto;background:#401b20;color:white;padding:14px;border-radius:12px;z-index:99999;font:14px system-ui';el.textContent='EURO LIFE loading error: '+(e.reason?.message||e.reason||'unknown');document.body.appendChild(el)});
+requestAnimationFrame(animate);
