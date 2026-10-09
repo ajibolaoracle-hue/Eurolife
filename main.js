@@ -60,6 +60,12 @@ function box(w,h,d,mat,x,y,z, parent=scene){
   const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat); o.position.set(x,y,z);
   o.castShadow=true;o.receiveShadow=true;parent.add(o);return o;
 }
+const colliders=[];
+function solid(x,z,w,d){colliders.push({x,z,w,d})}
+function blocked(x,z){
+  if(state.mode==='home') return false;
+  return colliders.some(b=>Math.abs(x-b.x)<b.w/2+.45 && Math.abs(z-b.z)<b.d/2+.45);
+}
 function cyl(r,h,mat,x,y,z,parent=scene){
   const o=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,10),mat);o.position.set(x,y,z);o.castShadow=true;parent.add(o);return o;
 }
@@ -76,10 +82,15 @@ function label(text,x,z,color='#172534'){
   s.scale.set(6.5,1.4,1);s.position.set(x,5.3,z);scene.add(s);
 }
 function building(x,z,w,d,h,mat,name){
-  box(w,h,d,mat,x,h/2,z);box(w+.12,.2,d+.12,mats.roof,x,h+.1,z);
+  box(w,h,d,mat,x,h/2,z);solid(x,z,w,d);box(w+.12,.2,d+.12,mats.roof,x,h+.1,z);
   for(let xx=x-w/2+1.15;xx<x+w/2-.3;xx+=1.45)
     for(let yy=1.5;yy<h-1;yy+=2.05) box(.56,.62,.04,mats.window,xx,yy,z-d/2-.03);
-  box(1.05,1.8,.08,mats.door,x,0.9,z-d/2-.07);
+  const door=box(1.05,1.8,.08,mats.door,x,0.9,z-d/2-.07);
+  door.userData.door=name;
+  // Leave a doorway gap in the collision wall; buildings themselves remain solid.
+  colliders.pop();
+  solid(x-w/2+.1,z,w-.8,d);solid(x+w/2-.1,z,w-.8,d);
+  solid(x,z-d/2+.1,w,.45);solid(x,z+d/2-.1,w,.45);
   label(name.toUpperCase(),x,z-d/2-.25);
 }
 
@@ -106,13 +117,13 @@ function buildCity(){
 
   label('METRO · ABBESSES',8,8);
   label('MONTMARTRE',0,-22);
-  point('Café des Artistes',-8,-8,()=>cafe());
-  point('Your Apartment',-32,-32,()=>enterApartment());
-  point('Tech Hub Paris',32,-16,()=>jobHub());
-  point('Bakery',-32,32,()=>bakery());
-  point('Market',-16,32,()=>market());
-  point('Cinema',32,32,()=>cinema());
-  point('Hotel',32,-32,()=>hotel());
+  point('Enter Café',-8,-2.2,()=>enterInterior('Café des Artistes','cafe'),3);
+  point('Enter Apartment',-32,-25.7,()=>enterApartment(),3);
+  point('Enter Tech Hub',32,-9.7,()=>enterInterior('Tech Hub Paris','tech'),3);
+  point('Enter Bakery',-32,38.3,()=>enterInterior('Bakery','bakery'),3);
+  point('Enter Market',-16,38.3,()=>market(),3);
+  point('Enter Cinema',32,38.3,()=>cinema(),3);
+  point('Enter Hotel',32,-25.7,()=>hotel(),3);
   point('Metro Abbesses',8,8,()=>metro());
 
   createCars();
@@ -142,9 +153,12 @@ const cars=[],npcs=[];
 buildCity();
 
 const player=new THREE.Group();player.position.set(-1,0,-18);scene.add(player);
-cyl(.42,1.05,mats.shirt,0,.72,0,player);
-const head=new THREE.Mesh(new THREE.SphereGeometry(.38,14,10),mats.skin);head.position.y=1.48;player.add(head);
-const hair=new THREE.Mesh(new THREE.SphereGeometry(.4,14,8,0,Math.PI*2,0,Math.PI*.5),MAT(0x2b211e));hair.position.y=1.62;player.add(hair);
+const torso=box(.68,.85,.38,mats.shirt,0,1.05,0,player);
+const head=new THREE.Mesh(new THREE.SphereGeometry(.27,14,10),mats.skin);head.position.y=1.68;player.add(head);
+const hair=new THREE.Mesh(new THREE.SphereGeometry(.29,14,8,0,Math.PI*2,0,Math.PI*.5),MAT(0x2b211e));hair.position.y=1.79;player.add(hair);
+const armL=box(.18,.65,.2,mats.skin,-.46,1.03,0,player),armR=box(.18,.65,.2,mats.skin,.46,1.03,0,player);
+const legL=box(.22,.62,.25,MAT(0x242b38),-.2,.32,0,player),legR=box(.22,.62,.25,MAT(0x242b38),.2,.32,0,player);
+const playerParts=[armL,armR,legL,legR];
 
 const state={zone:'MONTMARTRE',place:'Paris · France',mode:'city'};
 const keys={},joy={x:0,y:0,on:false};
@@ -163,7 +177,7 @@ pad.onpointerup=()=>{joy.on=false;joy.x=joy.y=0;knob.style.transform='translate(
 let near=null;
 function nearest(){
   let best=null,d=999;
-  const list=state.mode==='home'?homePoints:world;
+  const list=state.mode==='home'?homePoints:state.mode==='interior'?interiorPoints:world;
   for(const p of list){const dd=Math.hypot(player.position.x-p.x,player.position.z-p.z);if(dd<(p.range||2.8)&&dd<d){d=dd;best=p}}
   return best;
 }
@@ -237,6 +251,37 @@ function talk(name){
 }
 window.hang=name=>{if(S.money<25)return toast('You need €25.');if(S.energy<5)return toast('You are too tired.');S.money-=25;S.energy=clamp(S.energy-5);S.fun=clamp(S.fun+22);S.social=clamp(S.social+20);S.friends[name]=clamp((S.friends[name]||0)+15);advance(1);save();ui();close();toast('❤️ You spent time with '+name)};
 
+
+function enterInterior(name,type){
+  state.mode='interior';state.zone=name.toUpperCase();state.place=name+' · interior';
+  // Hide the outdoor city while inside; build a small walkable room with furniture.
+  scene.children.forEach(o=>{if(o!==player && o!==sun && !(o.isLight) && o!==scene.fog) o.visible=false});
+  player.visible=true;player.position.set(0,0,5);
+  const room=new THREE.Group();room.name='activeInterior';scene.add(room);
+  box(22,.2,18,MAT(0x9a8978),0,-.15,0,room);
+  box(22,5,.3,MAT(0xe4d4bd),0,2.5,-9,room);box(.3,5,18,MAT(0xe4d4bd),-11,2.5,0,room);box(.3,5,18,MAT(0xe4d4bd),11,2.5,0,room);
+  box(22,5,.3,MAT(0xe4d4bd),0,2.5,9,room);
+  box(3,1,1.5,MAT(type==='cafe'?0x79513d:0x566c7e),-3,.5,-2,room);
+  box(1.2,1.2,1.2,MAT(0x6a4432),3,.6,-3,room);
+  box(2,.12,1.2,MAT(0x44312a),3,1.25,-3,room);
+  box(1.2,2,.12,MAT(0x8ac0ce),8,2,-8.7,room);
+  label(name.toUpperCase(),0,-7);
+  interiorGroup=room;
+  interiorPoints.length=0;
+  if(type==='cafe')interiorPoints.push({name:'Order counter',x:-3,z:-2,action:()=>cafe(),range:2.5},{name:'Exit to street',x:0,z:7,action:exitInterior,range:3});
+  else if(type==='tech')interiorPoints.push({name:'Work station',x:3,z:-3,action:jobs,range:2.5},{name:'Exit to street',x:0,z:7,action:exitInterior,range:3});
+  else interiorPoints.push({name:'Buy food',x:-3,z:-2,action:bakery,range:2.5},{name:'Exit to street',x:0,z:7,action:exitInterior,range:3});
+  toast('Entered '+name+' · walk to the counter or exit');
+}
+let interiorGroup=null;
+const interiorPoints=[];
+function exitInterior(){
+  if(interiorGroup){scene.remove(interiorGroup);interiorGroup=null}
+  scene.children.forEach(o=>o.visible=true);
+  state.mode='city';state.zone='MONTMARTRE';state.place='Paris · France';player.position.set(-8,0,-3);
+  ui();toast('Back on the street');
+}
+
 const homePoints=[];
 function clearHome(){scene.children.filter(o=>o.userData.home).forEach(o=>scene.remove(o))}
 function buildHome(){
@@ -278,12 +323,16 @@ function animate(t){
   let mz=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0)+joy.y;
   const len=Math.hypot(mx,mz);if(len>1){mx/=len;mz/=len}
   if(len>.05){
-    const speed=state.mode==='home'?4.4:5.2;
-    player.position.x+=mx*speed*dt;player.position.z+=mz*speed*dt;
+    const speed=state.mode==='interior'?3.6:5.2;
+    const nx=player.position.x+mx*speed*dt,nz=player.position.z+mz*speed*dt;
+    if(!blocked(nx,player.position.z))player.position.x=nx;
+    if(!blocked(player.position.x,nz))player.position.z=nz;
     player.rotation.y=Math.atan2(mx,mz);
+    playerParts[0].rotation.x=Math.sin(t*.015)*.65;playerParts[1].rotation.x=-Math.sin(t*.015)*.65;
+    playerParts[2].rotation.x=-Math.sin(t*.015)*.55;playerParts[3].rotation.x=Math.sin(t*.015)*.55;
     S.energy=clamp(S.energy-dt*.22);S.hunger=clamp(S.hunger-dt*.1);
-  }
-  const lim=state.mode==='home'?10:42;player.position.x=clamp(player.position.x,-lim,lim);player.position.z=clamp(player.position.z,-lim,lim);
+  } else {playerParts.forEach(p=>p.rotation.x*=.72)}
+  const lim=state.mode==='home'||state.mode==='interior'?10:42;player.position.x=clamp(player.position.x,-lim,lim);player.position.z=clamp(player.position.z,-lim,lim);
   near=nearest();
   $('prompt').classList.toggle('show',!!near);if(near)$('prompt').textContent='E · '+near.name;
   for(const n of npcs){
@@ -295,7 +344,7 @@ function animate(t){
     else{c.g.position.z+=c.spd*dt;if(c.g.position.z>44)c.g.position.z=-44;if(c.g.position.z<-44)c.g.position.z=44}
   }
   const target=new THREE.Vector3(player.position.x,0.8,player.position.z);
-  const desired=new THREE.Vector3(target.x+9,target.y+8,target.z+10);
+  const desired=state.mode==='interior'?new THREE.Vector3(target.x+7,target.y+6,target.z+8):new THREE.Vector3(target.x+9,target.y+8,target.z+10);
   camera.position.lerp(desired,.09);camera.lookAt(target);
   sun.intensity=.8+Math.max(0,Math.sin((S.hour-6)/24*Math.PI*2))*2.2;
   scene.background.set(S.hour<7||S.hour>20?0x17253a:0x9dbed0);
