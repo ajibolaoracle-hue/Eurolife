@@ -1,4 +1,4 @@
-import * as THREE from 'https://unpkg.com/three@0.180.0/build/three.module.js';
+const THREE = window.THREE;
 
 const $ = id => document.getElementById(id);
 const clamp = (n,a=0,b=100) => Math.max(a,Math.min(b,n));
@@ -174,6 +174,15 @@ const hair=new THREE.Mesh(new THREE.SphereGeometry(.29,14,8,0,Math.PI*2,0,Math.P
 const armL=box(.18,.65,.2,mats.skin,-.46,1.03,0,player),armR=box(.18,.65,.2,mats.skin,.46,1.03,0,player);
 const legL=box(.22,.62,.25,MAT(0x242b38),-.2,.32,0,player),legR=box(.22,.62,.25,MAT(0x242b38),.2,.32,0,player);
 const playerParts=[armL,armR,legL,legR];
+window.applyCharacterSelection=()=>{
+  let ch={};try{ch=JSON.parse(localStorage.getItem('eurolife-character')||'{}')}catch(e){}
+  if(ch.name){S.name=ch.name;save()}
+  if(ch.skin)mats.skin.color.set(ch.skin);
+  if(ch.outfit)mats.shirt.color.set(ch.outfit);
+  if(ch.hair)hair.material.color.set(ch.hair);
+  ui();
+};
+window.applyCharacterSelection();
 
 const state={zone:'MONTMARTRE',place:'Paris · France',mode:'city'};
 const keys={},joy={x:0,y:0,on:false};
