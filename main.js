@@ -25,11 +25,11 @@ function ui(){
   if($('place')) $('place').textContent=state.place;
 }
 function toast(t){
-  $('toast').textContent=t; $('toast').classList.add('show');
-  clearTimeout(window.__toast); window.__toast=setTimeout(()=>$('toast').classList.remove('show'),2200);
+  let el=$('toast'); if(!el){el=document.createElement('div');el.id='toast';el.style='position:fixed;left:50%;top:90px;transform:translateX(-50%);z-index:99999;background:#101923ee;color:white;padding:12px 16px;border-radius:12px;font:700 13px system-ui;max-width:90vw;text-align:center';document.body.appendChild(el)}
+  el.textContent=t;el.style.display='block';clearTimeout(window.__toast);window.__toast=setTimeout(()=>{el.style.display='none'},2200);
 }
-function modal(html){if(!$('modal')) return; $('sheet').innerHTML=html;$('modal').classList.add('show')}
-function close(){ $('modal').classList.remove('show') }
+function modal(html){let wrap=$('modal');if(!wrap){wrap=document.createElement('div');wrap.id='modal';wrap.style='position:fixed;inset:0;z-index:99998;background:#0009;display:none;align-items:center;justify-content:center;padding:18px';const panel=document.createElement('div');panel.id='sheet';panel.style='background:#182631;color:white;border-radius:18px;padding:20px;max-width:560px;width:100%;max-height:80vh;overflow:auto;font:14px system-ui';wrap.appendChild(panel);document.body.appendChild(wrap);wrap.onclick=e=>{if(e.target===wrap)close()}}$('sheet').innerHTML=html;wrap.style.display='flex'}
+function close(){const el=$('modal');if(el)el.style.display='none'}
 window.closeModal=close;
 if($('modal')) $('modal').onclick=e=>{if(e.target.id==='modal')close()};
 
@@ -180,7 +180,7 @@ const keys={},joy={x:0,y:0,on:false};
 addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=true;if(e.key.toLowerCase()==='e')interact()});
 addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
 
-const pad=$('joystick'),knob=$('knob');
+const pad=$('joy'),knob=$('stick');
 function joyMove(e){
   const r=pad.getBoundingClientRect(),dx=e.clientX-(r.left+r.width/2),dy=e.clientY-(r.top+r.height/2),max=42,l=Math.hypot(dx,dy);
   const x=l>max?dx/l*max:dx,y=l>max?dy/l*max:dy;joy.x=x/max;joy.y=y/max;knob.style.transform='translate('+x+'px,'+y+'px)';
