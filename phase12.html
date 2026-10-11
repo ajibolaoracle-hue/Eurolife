@@ -112,6 +112,44 @@ function saveGame(){try{localStorage.setItem('eurolife-save-v9',JSON.stringify({
 function closest(){let best=null,bd=1e9;for(const o of interactables){const d=Math.hypot(player.position.x-o.x,player.position.z-o.z);if(d<bd){bd=d;best=o}}return bd<9?best:null}
 function interact(){const o=closest();if(!o){let near=null,dist=1e9;for(const n of npcs){const d=player.position.distanceTo(n.position);if(d<dist){dist=d;near=n}}if(near&&dist<4.5){friendships++;rep++;syncStats();notify('NEW CONNECTION','You introduced yourself to a local. Friendship +1 · Reputation +1.');$('missionTitle').textContent='MEET THE LOCALS';$('missionText').textContent='You made a connection. Find work, shop and build your reputation.'}else notify('EXPLORE PARIS','Approach a marked place or a pedestrian to interact.');return}if(o.kind==='cafe'){notify('CAFÉ DES ARTISTES',shiftDone?'Your shift is finished for today. Come back tomorrow.':'The café owner is hiring. Tap FIND WORK to start a paid shift.');$('missionTitle').textContent=shiftDone?'SHIFT FINISHED':'FIRST SHIFT AVAILABLE';$('missionText').textContent=shiftDone?'Meet locals, eat and rest.':'Earn wages, buy food and meet people in Paris.'}else if(o.kind==='tech'){notify('TECH HUB',rep>=2?'You qualify for a junior support trial. Tap FIND WORK to take it.':'Build reputation to 2 by working and meeting locals to unlock junior tech work.')}else if(o.kind==='home'){energy=Math.min(100,energy+55);food=Math.max(0,food-8);syncStats();notify('YOUR APARTMENT','You rested at home. Energy restored by 55%.')}else if(o.kind==='shop'||o.kind==='market'){if(cash>=8){cash-=8;food=Math.min(100,food+32);syncStats();notify(o.title,'You bought a meal for €8. Food +32%.')}else notify(o.title,'Not enough cash. Find work first.')}else notify(o.title,'You arrived at '+o.title+'.')}
 function phone(){notify((c.name||'Alex')+' · LIFE PHONE','Wallet: €'+cash.toLocaleString('en-US')+' | Day '+day+' | Reputation: '+rep+' | Friends: '+friendships+' | Missions: '+missionsDone+' | Energy: '+Math.round(energy)+'% | Food: '+Math.round(food)+'%. Goal: '+(shiftDone?'Meet locals, eat and rest.':'Find your first job at Café des Artistes.') )}
+function work(){
+  const o=closest();
+  if(!o || (o.kind!=='cafe' && o.kind!=='tech')){
+    notify('FIND A WORKPLACE','Go to Café des Artistes and tap INTERACT when nearby. Then tap FIND WORK to begin your shift.');
+    $('missionTitle').textContent='FIND YOUR FIRST SHIFT';
+    $('missionText').textContent='Head to Café des Artistes. Your first paid shift is waiting.';
+    return;
+  }
+  if(o.kind==='tech'){
+    if(rep<2){notify('TECH HUB LOCKED','You need reputation 2. Meet locals and complete café work to qualify.');return;}
+    if(energy<18||food<12){notify('TOO TIRED TO WORK','Eat something or rest before starting a shift.');return;}
+    energy=Math.max(0,energy-18);cash+=145;rep+=1;missionsDone++;syncStats();
+    $('missionTitle').textContent='TECH SUPPORT TRIAL COMPLETE';
+    $('missionText').textContent='You finished a support task, earned €145 and gained reputation.';
+    notify('JUNIOR TECH SHIFT COMPLETE','You earned €145. Reputation +1. Your next goal: keep your energy up and build your career.');
+    return;
+  }
+  if(shiftDone){notify('SHIFT COMPLETE','You have already completed today’s café shift. Come back after the next day begins.');return;}
+  if(energy<15||food<10){notify('TOO TIRED TO WORK','You need at least 15 energy and 10 food to work. Visit the market or rest at home.');return;}
+  const tasks=['Take customer orders','Prepare and serve drinks','Clean tables and close the counter'];
+  const step=Number(window.eurolifeShiftStep||0);
+  if(step===0){
+    window.eurolifeShiftStep=1;energy=Math.max(0,energy-5);syncStats();
+    $('missionTitle').textContent='CAFÉ SHIFT · 1/3';
+    $('missionText').textContent='Task 1 complete: customer orders. Tap FIND WORK again to continue.';
+    notify('SHIFT STARTED','You clocked in at Café des Artistes. Task complete: take customer orders. Continue your shift to earn wages.');
+  } else if(step===1){
+    window.eurolifeShiftStep=2;energy=Math.max(0,energy-7);food=Math.max(0,food-4);syncStats();
+    $('missionTitle').textContent='CAFÉ SHIFT · 2/3';
+    $('missionText').textContent='Task 2 complete: serve drinks. Tap FIND WORK again to finish your shift.';
+    notify('GOOD WORK','You served the café customers. One task remains before payday.');
+  } else {
+    window.eurolifeShiftStep=0;shiftDone=true;energy=Math.max(0,energy-8);food=Math.max(0,food-5);cash+=95;rep+=1;missionsDone++;syncStats();
+    $('missionTitle').textContent='SHIFT COMPLETE · +€95';
+    $('missionText').textContent='You finished your café shift. Get food, rest, and return tomorrow.';
+    notify('PAYDAY · €95','You completed all three café tasks and received €95. Reputation +1. Your money, energy, food and progress have been saved.');
+  }
+}
 $('interact').onclick=interact;$('work').onclick=work;$('phone').onclick=phone;
 function animate(now){if(!started)return;const dt=Math.min(.04,(now-last)/1000);last=now;let x=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0)+joy.x,z=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0)+joy.y,len=Math.hypot(x,z);if(len>1){x/=len;z/=len}const moving=len>.08;if(player.userData.realModel){const actions=player.userData.actions||{};const desired=moving?(keys.shift?'run':'walk'):'idle';const next=actions[desired]||actions.walk||actions.idle;if(next&&next!==player.userData.activeAction){if(player.userData.activeAction)player.userData.activeAction.fadeOut(.18);next.reset().fadeIn(.18).play();player.userData.activeAction=next;}if(realPlayerMixer)realPlayerMixer.update(dt);}if(moving){walkPhase+=dt*9;player.position.x+=x*5.4*dt;player.position.z+=z*5.4*dt;player.rotation.y=Math.atan2(x,z);if(!player.userData.realModel){player.userData.legs[0].rotation.x=Math.sin(walkPhase)*.62;player.userData.legs[1].rotation.x=-Math.sin(walkPhase)*.62;player.userData.arms[0].rotation.x=-Math.sin(walkPhase)*.4;player.userData.arms[1].rotation.x=Math.sin(walkPhase)*.4}}else{if(!player.userData.realModel){player.userData.legs.forEach(l=>l.rotation.x*=.8);player.userData.arms.forEach(a=>a.rotation.x*=.8)}}player.position.x=THREE.MathUtils.clamp(player.position.x,-49,49);player.position.z=THREE.MathUtils.clamp(player.position.z,-49,49);
 npcs.forEach((n,i)=>{const p=now*.0004+n.userData.phase;n.position.x=n.userData.originX+Math.sin(p)*1.3;n.position.z=n.userData.originZ+Math.cos(p*.7)*.6;n.rotation.y=Math.atan2(Math.cos(p)*.5,-Math.sin(p)*.3);n.userData.legs[0].rotation.x=Math.sin(p*4)*.18;n.userData.legs[1].rotation.x=-Math.sin(p*4)*.18;n.userData.arms[0].rotation.x=-Math.sin(p*4)*.1;n.userData.arms[1].rotation.x=Math.sin(p*4)*.1});
