@@ -4,6 +4,9 @@ const $ = id => document.getElementById(id);
 const clamp = (n,a=0,b=100) => Math.max(a,Math.min(b,n));
 const money = n => '€'+Math.max(0,Math.round(n)).toLocaleString();
 
+// Initialize scene mode before any character/UI setup calls ui().
+const state={zone:'MONTMARTRE',place:'Paris · France',mode:'city'};
+
 let S = JSON.parse(localStorage.getItem('eurolife-life') || 'null') || {
   name:'Alex', money:1200, day:1, hour:8,
   hunger:72, energy:82, hygiene:78, fun:65, social:55, mood:70,
@@ -184,7 +187,6 @@ window.applyCharacterSelection=()=>{
 };
 window.applyCharacterSelection();
 
-const state={zone:'MONTMARTRE',place:'Paris · France',mode:'city'};
 const keys={},joy={x:0,y:0,on:false};
 addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=true;if(e.key.toLowerCase()==='e')interact()});
 addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
