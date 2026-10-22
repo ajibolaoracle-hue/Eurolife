@@ -56,8 +56,8 @@
  const $=id=>document.getElementById(id);
  const paint=()=>{
   $('previewName').textContent=choice.name||'Alex';
-  $('previewHead').style.background=choice.skin;
-  $('previewBody').style.background=choice.outfit;
+  $('previewHead') && ($('previewHead').style.background=choice.skin);
+  $('previewBody') && ($('previewBody').style.background=choice.outfit);
   $('previewHair') && ($('previewHair').style.background=choice.hair);
   if(window.update3dPreview)window.update3dPreview(choice);
   document.querySelectorAll('[data-skin]').forEach(b=>b.style.borderColor=b.dataset.skin===choice.skin?'white':'transparent');
