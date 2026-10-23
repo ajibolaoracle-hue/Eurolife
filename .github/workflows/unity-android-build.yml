@@ -1,0 +1,49 @@
+name: Unity Android Build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "UnityProject/**"
+      - ".github/workflows/unity-android-build.yml"
+    branches:
+      - unity-mobile-foundation
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check Unity project files
+        run: |
+          test -d UnityProject/Assets
+          test -d UnityProject/Assets/Scripts
+          echo "Unity source files found."
+          echo "A complete Unity project manifest and scenes are still required before this can compile."
+
+      - name: Build Android with Unity
+        if: ${{ vars.UNITY_BUILD_ENABLED == 'true' }}
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: UnityProject
+          targetPlatform: Android
+          buildName: EuroLife
+          buildsPath: build
+          buildMethod: ''
+          allowDirtyBuild: true
+
+      - name: Upload Android build
+        if: ${{ success() && vars.UNITY_BUILD_ENABLED == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: eurolife-android-build
+          path: build
+          if-no-files-found: error
+          retention-days: 7
