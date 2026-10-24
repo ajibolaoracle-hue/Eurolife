@@ -49,19 +49,26 @@ Deno.serve(async (req: Request) => {
   if (!Number.isInteger(minutes) || (minutes as number) < 5 || (minutes as number) > 1440)
     return json(400, { error: "invalid_duration" });
 
-  const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
-  // Prevent unfunded offers: wallet account must already exist and have enough balance.
-  // A production implementation must reserve funds atomically in a database transaction.
-  const { data: wallet, error: walletError } = await admin
-    .from("wallet_accounts").select("balance_euros").eq("user_id", user.id).maybeSingle();
-  if (walletError) return json(500, { error: "wallet_lookup_failed" });
-  if (!wallet || Number(wallet.balance_euros) < (wage as number))
-    return json(409, { error: "insufficient_funds" });
+  const idempotencyKey = req.headers.get("Idempotency-Key");
+  if (!idempotencyKey || idempotencyKey.trim().length < 8 || idempotencyKey.length > 128)
+    return json(400, { error: "valid_idempotency_key_required" });
 
-  // This starter endpoint does not yet reserve funds atomically. Do not enable for production
-  // until job creation and escrow reservation are implemented in one transactional DB function.
-  return json(501, {
-    error: "transactional_job_creation_not_implemented",
-    message: "Validation and authentication passed, but job creation is disabled until atomic escrow is implemented.",
+  const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
+  const { data, error } = await admin.rpc("create_job_with_escrow", {
+    p_business_name: businessName,
+    p_title: title,
+    p_description: description,
+    p_wage_euros: wage,
+    p_estimated_minutes: minutes,
+    p_idempotency_key: idempotencyKey,
   });
+
+  if (error) {
+    if (error.message.includes("insufficient_funds")) return json(409, { error: "insufficient_funds" });
+    if (error.code === "22023") return json(400, { error: "invalid_request" });
+    if (error.code === "28000") return json(401, { error: "unauthorized" });
+    console.error("create-job RPC failed", { code: error.code });
+    return json(500, { error: "job_creation_failed" });
+  }
+  return json(201, { job: data });
 });
