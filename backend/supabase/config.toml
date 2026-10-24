@@ -17,3 +17,6 @@ verify_jwt = true
 
 [functions.job-action]
 verify_jwt = true
+
+[functions.send-chat-message]
+verify_jwt = true
