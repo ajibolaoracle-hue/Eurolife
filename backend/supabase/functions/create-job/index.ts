@@ -22,8 +22,7 @@ Deno.serve(async (req: Request) => {
 
   const url = Deno.env.get("SUPABASE_URL");
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!url || !anonKey || !serviceKey) return json(500, { error: "server_not_configured" });
+  if (!url || !anonKey) return json(500, { error: "server_not_configured" });
 
   const authClient = createClient(url, anonKey, {
     global: { headers: { Authorization: authHeader } },
@@ -53,8 +52,11 @@ Deno.serve(async (req: Request) => {
   if (!idempotencyKey || idempotencyKey.trim().length < 8 || idempotencyKey.length > 128)
     return json(400, { error: "valid_idempotency_key_required" });
 
-  const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
-  const { data, error } = await admin.rpc("create_job_with_escrow", {
+  const userClient = createClient(url, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data, error } = await userClient.rpc("create_job_with_escrow", {
     p_business_name: businessName,
     p_title: title,
     p_description: description,
