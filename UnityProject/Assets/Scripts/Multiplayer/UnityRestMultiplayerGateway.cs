@@ -28,11 +28,11 @@ public sealed class UnityRestMultiplayerGateway : IMultiplayerGateway
     {
         string query = string.IsNullOrWhiteSpace(status) ? "open" : status.Trim();
         GatewayResult<JobListingDto[]> response =
-            await Get<JobListingDto[]>("/jobs?status=" + Uri.EscapeDataString(query));
+            await Get<JobListResponse>("/jobs?status=" + Uri.EscapeDataString(query));
         if (!response.success)
             return GatewayResult<IReadOnlyList<JobListingDto>>.Failure(response.errorCode, response.errorMessage);
 
-        return GatewayResult<IReadOnlyList<JobListingDto>>.Success(response.data);
+        return GatewayResult<IReadOnlyList<JobListingDto>>.Success(response.data.items ?? new JobListingDto[0]);
     }
 
     public Task<GatewayResult<JobListingDto>> PostJobAsync(PostJobRequest request, string idempotencyKey) =>
@@ -51,7 +51,7 @@ public sealed class UnityRestMultiplayerGateway : IMultiplayerGateway
             new PlayerActionRequest { playerId = playerId }, idempotencyKey);
 
     public Task<GatewayResult<ChatMessageDto>> SendChatMessageAsync(SendChatMessageRequest request, string idempotencyKey) =>
-        Send<ChatMessageDto>("/POST", "/conversations/" + Uri.EscapeDataString(request.conversationId) + "/messages",
+        Send<ChatMessageDto>("POST", "/conversations/" + Uri.EscapeDataString(request.conversationId) + "/messages",
             request, idempotencyKey);
 
     private Task<GatewayResult<T>> Get<T>(string path) => Send<T>("GET", path, null, null);
@@ -113,7 +113,7 @@ public sealed class UnityRestMultiplayerGateway : IMultiplayerGateway
         }
     }
 
-    [Serializable] private class PlayerActionRequest { public string playerId; }
+    [Serializable] private class JobListResponse { public JobListingDto[] items; }\n    [Serializable] private class PlayerActionRequest { public string playerId; }
     [Serializable] private class HireApplicantRequest { public string employerPlayerId; public string workerPlayerId; }
 }
 
