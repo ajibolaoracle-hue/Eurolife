@@ -20,3 +20,9 @@ verify_jwt = true
 
 [functions.send-chat-message]
 verify_jwt = true
+
+[functions.create-profile]
+verify_jwt = true
+
+[functions.report-player]
+verify_jwt = true
