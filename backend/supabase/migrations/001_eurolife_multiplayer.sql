@@ -105,6 +105,22 @@ create table if not exists public.player_reports (
   check (reporter_id <> reported_id)
 );
 
+-- SECURITY DEFINER helper avoids recursive RLS when checking conversation membership.
+create or replace function public.is_conversation_member(_conversation_id uuid, _user_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $
+  select exists (
+    select 1 from public.conversation_members m
+    where m.conversation_id = _conversation_id and m.user_id = _user_id
+  );
+$;
+revoke all on function public.is_conversation_member(uuid, uuid) from public;
+grant execute on function public.is_conversation_member(uuid, uuid) to authenticated;
+
 -- Turn on RLS everywhere. Policies intentionally do not grant direct client writes to
 -- job lifecycle, wallet balances/ledger, or moderation status. Use trusted server functions.
 alter table public.player_profiles enable row level security;
@@ -153,20 +169,17 @@ create policy "applicants and job owners read applications"
 drop policy if exists "members read conversations" on public.conversations;
 create policy "members read conversations"
   on public.conversations for select to authenticated
-  using (exists (select 1 from public.conversation_members m
-    where m.conversation_id = id and m.user_id = auth.uid()));
+  using (public.is_conversation_member(id, auth.uid()));
 
 drop policy if exists "members see membership" on public.conversation_members;
 create policy "members see membership"
   on public.conversation_members for select to authenticated
-  using (exists (select 1 from public.conversation_members m
-    where m.conversation_id = conversation_id and m.user_id = auth.uid()));
+  using (public.is_conversation_member(conversation_id, auth.uid()));
 
 drop policy if exists "members read chat messages" on public.chat_messages;
 create policy "members read chat messages"
   on public.chat_messages for select to authenticated
-  using (exists (select 1 from public.conversation_members m
-    where m.conversation_id = conversation_id and m.user_id = auth.uid()));
+  using (public.is_conversation_member(conversation_id, auth.uid()));
 
 -- No client message INSERT policy by design: a trusted endpoint checks conversation membership,
 -- both users' block lists, rate limits and moderation before inserting.
