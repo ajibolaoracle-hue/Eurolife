@@ -29,3 +29,6 @@ verify_jwt = true
 
 [functions.manage-block]
 verify_jwt = true
+
+[functions.list-jobs]
+verify_jwt = true
