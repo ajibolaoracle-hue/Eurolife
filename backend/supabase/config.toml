@@ -26,3 +26,6 @@ verify_jwt = true
 
 [functions.report-player]
 verify_jwt = true
+
+[functions.manage-block]
+verify_jwt = true
