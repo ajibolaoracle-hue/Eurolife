@@ -32,3 +32,6 @@ verify_jwt = true
 
 [functions.list-jobs]
 verify_jwt = true
+
+[functions.create-conversation]
+verify_jwt = true
