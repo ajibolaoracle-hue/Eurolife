@@ -38,7 +38,7 @@ public sealed class EuroLifeSupabaseClient
         Post("create-profile", new ProfilePayload { displayName = displayName, avatarId = avatarId });
 
     public Task<EuroLifeApiResult> BrowseJobsAsync(string status, int limit = 20, int offset = 0) =>
-        Post("list-jobs", new JobsPayload { status = string.IsNullOrWhiteSpace(status) ? "open" : status, limit = Mathf.Clamp(limit, 1, 50), offset = Mathf.Max(0, offset) });
+        GetJobs("list-jobs", string.IsNullOrWhiteSpace(status) ? "open" : status, Mathf.Clamp(limit, 1, 50), Mathf.Max(0, offset));
 
     public Task<EuroLifeApiResult> CreateJobAsync(string businessName, string title, string description, int wageEuros, int estimatedMinutes, string idempotencyKey) =>
         Post("create-job", new CreateJobPayload { businessName = businessName, title = title, description = description, wageEuros = wageEuros, estimatedMinutes = estimatedMinutes }, idempotencyKey);
@@ -66,6 +66,31 @@ public sealed class EuroLifeSupabaseClient
 
     public Task<EuroLifeApiResult> ReportPlayerAsync(string reportedPlayerId, string category, string details) =>
         Post("report-player", new ReportPayload { reportedPlayerId = reportedPlayerId, category = category, details = details });
+
+    private async Task<EuroLifeApiResult> GetJobs(string functionName, string status, int limit, int offset)
+    {
+        if (config == null || !config.IsConfigured)
+            return EuroLifeApiResult.Fail("backend_not_configured", "Set the Supabase HTTPS URL and public anon/publishable key.");
+        if (tokenProvider == null)
+            return EuroLifeApiResult.Fail("auth_unavailable", "Attach an authenticated Supabase access-token provider.");
+        string token = await tokenProvider.GetAccessTokenAsync();
+        if (string.IsNullOrWhiteSpace(token))
+            return EuroLifeApiResult.Fail("not_authenticated", "Sign in before using online features.");
+        string url = config.ProjectUrl + "/functions/v1/" + functionName +
+            "?status=" + UnityWebRequest.EscapeURL(status) + "&limit=" + limit + "&offset=" + offset;
+        using (var request = UnityWebRequest.Get(url))
+        {
+            request.SetRequestHeader("apikey", config.PublicKey);
+            request.SetRequestHeader("Authorization", "Bearer " + token);
+            var operation = request.SendWebRequest();
+            while (!operation.isDone) await Task.Yield();
+            string responseBody = request.downloadHandler == null ? "" : request.downloadHandler.text;
+            if (request.result != UnityWebRequest.Result.Success)
+                return EuroLifeApiResult.Fail(request.responseCode == 401 ? "unauthorized" : request.responseCode == 403 ? "forbidden" : request.responseCode >= 500 ? "server_error" : "request_failed",
+                    "Backend request failed (HTTP " + request.responseCode + ").", responseBody);
+            return EuroLifeApiResult.Ok(responseBody);
+        }
+    }
 
     private async Task<EuroLifeApiResult> Post(string functionName, object payload, string idempotencyKey = null)
     {
@@ -107,7 +132,6 @@ public sealed class EuroLifeSupabaseClient
     }
 
     [Serializable] private sealed class ProfilePayload { public string displayName; public string avatarId = "default"; }
-    [Serializable] private sealed class JobsPayload { public string status; public int limit = 20; public int offset; }
     [Serializable] private sealed class CreateJobPayload { public string businessName; public string title; public string description; public int wageEuros; public int estimatedMinutes; }
     [Serializable] private sealed class JobActionPayload { public string jobId; public string action; public string targetWorkerId; }
     [Serializable] private sealed class ConversationPayload { public string kind = "direct"; public string targetUserId; public string title; }
