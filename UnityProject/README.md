@@ -20,3 +20,20 @@ This folder is the **separate Unity mobile-game foundation**. The existing web p
 
 ## Important
 This is a code foundation, not a compiled or tested mobile build. The scene, licensed art assets, iOS signing, and Android/iOS build configuration still need to be completed and tested on a supported build machine/service. Do not treat this folder as a playable release yet.
+
+
+## Supabase multiplayer connection (backend staging)
+
+The backend project URL is `https://xkyjeonqbfaaxnmujybn.supabase.co`. The Unity client calls deployed Edge Functions directly; it does **not** embed a service-role key.
+
+1. Copy `Assets/Scripts/Multiplayer/EuroLifeSupabaseClient.cs` into the Unity project.
+2. In Unity, create an asset using **EURO LIFE → Supabase Client Config**. Set the project's public anon/publishable key in that asset. A public client key is expected in client apps; never put the service-role/secret key here.
+3. Implement `IEuroLifeAccessTokenProvider` using the authenticated Supabase session and return the current user's access JWT. Do not use an arbitrary player ID or a hard-coded token as identity.
+4. Construct `EuroLifeSupabaseClient` after sign-in and call `SaveProfileAsync`, `BrowseJobsAsync`, `CreateJobAsync`, `ApplyForJobAsync`, `HireApplicantAsync`, `ChangeJobActionAsync`, `CreateConversationAsync`, `SendMessageAsync`, `BlockPlayerAsync`, `UnblockPlayerAsync`, or `ReportPlayerAsync`.
+5. Treat the response JSON as a transport response only; parse and validate each response DTO before changing local HUD/wallet state. Server wallet balance is authoritative. Do not award client-side cash for online jobs.
+
+### Important integration limitations
+- The current Unity project still has no bundled sign-in UI or concrete `IEuroLifeAccessTokenProvider`. Online calls fail closed until the project integrates Supabase Auth and supplies the signed-in user's JWT.
+- The old `UnityRestMultiplayerGateway.cs` is a scaffold for a different REST route shape and depends on project interfaces/DTOs not present in this folder; use the new direct Edge Function client for the current Supabase backend.
+- No Unity Editor compile, mobile build, authenticated end-to-end test, or paid job lifecycle test has been run in this environment. Backend deployment status is not proof that gameplay is fully connected.
+- Before production, address remaining security-advisor findings, add persistent chat rate limiting/moderation, configure production CORS as appropriate, add unique display-name enforcement, and run concurrent/idempotency tests for job escrow and payment. Do not use real money in testing.
