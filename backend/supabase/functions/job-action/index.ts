@@ -37,6 +37,7 @@ Deno.serve(async (req: Request) => {
   try { body = await req.json(); } catch { return json(400, { error: "invalid_json" }); }
   const jobId = typeof body.jobId === "string" ? body.jobId : "";
   const action = typeof body.action === "string" ? body.action : "";
+  const targetWorkerId = typeof body.targetWorkerId === "string" ? body.targetWorkerId : null;
   const allowed = new Set(["apply", "hire", "start", "submit", "approve", "cancel"]);
   if (!jobId || !allowed.has(action)) return json(400, { error: "invalid_job_action" });
 
@@ -50,6 +51,7 @@ Deno.serve(async (req: Request) => {
     p_job_id: jobId,
     p_action: action,
     p_idempotency_key: idempotencyKey,
+    p_target_worker_id: action === "hire" ? targetWorkerId : null,
   });
   if (error) {
     if (error.code === "28000") return json(401, { error: "unauthorized" });
