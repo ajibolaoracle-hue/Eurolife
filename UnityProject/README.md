@@ -37,3 +37,27 @@ The backend project URL is `https://xkyjeonqbfaaxnmujybn.supabase.co`. The Unity
 - The old `UnityRestMultiplayerGateway.cs` is a scaffold for a different REST route shape and depends on project interfaces/DTOs not present in this folder; use the new direct Edge Function client for the current Supabase backend.
 - No Unity Editor compile, mobile build, authenticated end-to-end test, or paid job lifecycle test has been run in this environment. Backend deployment status is not proof that gameplay is fully connected.
 - Before production, address remaining security-advisor findings, add persistent chat rate limiting/moderation, configure production CORS as appropriate, add unique display-name enforcement, and run concurrent/idempotency tests for job escrow and payment. Do not use real money in testing.
+
+
+## Supabase Auth + safe smoke test
+
+New scripts:
+- `Assets/Scripts/Multiplayer/EuroLifeSupabaseAuth.cs`: email/password sign-in, in-memory access/refresh tokens, refresh near expiry, local sign-out, and `IEuroLifeAccessTokenProvider`.
+- `Assets/Scripts/Multiplayer/EuroLifeBackendSmokeTest.cs`: manual sign-in + job-board + profile smoke test.
+- `Assets/Scripts/Multiplayer/EuroLifeSupabaseClient.cs`: Edge Function client. Job browsing uses GET to match the deployed `list-jobs` endpoint; mutations use POST.
+
+### Unity setup
+1. Open the Unity project on a computer with a supported Unity Editor.
+2. Let Unity compile the scripts. Resolve any errors before proceeding; this repository has not yet been compiled in Unity.
+3. In the Project window, create an asset from **EURO LIFE → Supabase Client Config** and set the Supabase public anon/publishable key. The project URL is prefilled. Never use a service-role key.
+4. Add `EuroLifeSupabaseAuth` and `EuroLifeBackendSmokeTest` to a test GameObject. Assign the config asset and auth component in the Inspector.
+5. Use a disposable test account created in Supabase Auth. Enter its credentials only in the local Unity Inspector for this test. Do not commit credentials or capture them in screenshots/logs.
+6. Run **Run sign-in + read-only backend checks** from the component's Inspector context menu. Confirm sign-in succeeds, job listing responds, and profile save responds. Then check the Unity Console for errors.
+7. Repeat with a second disposable account to validate separate identities. Do not test payments with real money.
+
+### What this smoke test does not prove
+- It is not an automated Unity Test Framework suite and does not compile/build an APK.
+- It does not exercise job creation, application, hiring, approval/payment, direct chat, blocking, or reporting end to end.
+- The backend may reject profile saves if the schema/policies/configuration are not aligned. Investigate the response without logging tokens/passwords.
+- The current auth session is memory-only; app restart requires sign-in again. Add a proper sign-in screen and lifecycle handling before shipping.
+- No successful Unity Editor compile, Android/iOS build, or test-account run has yet been observed from this environment.
